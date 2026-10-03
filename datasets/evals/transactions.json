@@ -1,0 +1,6 @@
+[
+  {"transaction_id":"TX-1007","merchant_id":"M-101","amount":125.50,"currency":"PEN","status":"declined","authorization_code":"91","acquirer":"ACQ-ALPHA","issuer":"ISS-ANDES","card_network":"VISA","created_at":"2026-10-03T13:25:00-05:00","masked_pan":"411111******1111"},
+  {"transaction_id":"TX-1008","merchant_id":"M-102","amount":88.40,"currency":"USD","status":"pending","authorization_code":null,"acquirer":"ACQ-BETA","issuer":"ISS-PACIFIC","card_network":"MASTERCARD","created_at":"2026-10-03T13:32:00-05:00","masked_pan":"555555******4444"},
+  {"transaction_id":"TX-1009","merchant_id":"M-103","amount":45.00,"currency":"PEN","status":"declined","authorization_code":"05","acquirer":"ACQ-ALPHA","issuer":"ISS-PACIFIC","card_network":"VISA","created_at":"2026-10-03T13:42:00-05:00","masked_pan":"400000******0002"},
+  {"transaction_id":"TX-1010","merchant_id":"M-101","amount":19.90,"currency":"PEN","status":"approved","authorization_code":"00","acquirer":"ACQ-ALPHA","issuer":"ISS-ANDES","card_network":"VISA","created_at":"2026-10-03T13:47:00-05:00","masked_pan":"411111******1111"}
+]

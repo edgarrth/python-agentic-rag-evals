@@ -1,0 +1,14 @@
+{
+  "run_id": "run-uuid",
+  "suite": "full",
+  "status": "completed",
+  "progress": 1.0,
+  "gates_passed": true,
+  "gate_failures": [],
+  "aggregate": {
+    "rag_generation": 0.90,
+    "agentic": 0.96,
+    "safety": 1.0,
+    "voice_stt": 1.0
+  }
+}

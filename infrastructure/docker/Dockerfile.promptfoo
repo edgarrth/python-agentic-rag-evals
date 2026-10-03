@@ -1,0 +1,4 @@
+FROM node:24-alpine
+RUN npm install --global promptfoo@0.123.1
+WORKDIR /work
+ENTRYPOINT ["promptfoo"]

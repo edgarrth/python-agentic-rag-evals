@@ -1,0 +1,6 @@
+{
+  "question": "Revisa TX-1007, explica el rechazo y genera un borrador si corresponde.",
+  "strategy": "auto",
+  "top_k": 5,
+  "include_case_draft": true
+}

@@ -1,0 +1,108 @@
+name: axiz-payments-agentic-rag-evals
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.19.1
+    container_name: axiz-evals-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  memgraph:
+    image: memgraph/memgraph:3.13.1
+    container_name: axiz-evals-memgraph
+    command: ["--log-level=WARNING"]
+    ports:
+      - "7687:7687"
+      - "7444:7444"
+    volumes:
+      - memgraph_data:/var/lib/memgraph
+    restart: unless-stopped
+
+  backend:
+    image: axiz/payments-evals-backend:1.0.0
+    build:
+      context: ..
+      dockerfile: infrastructure/docker/Dockerfile.backend
+    container_name: axiz-evals-backend
+    env_file:
+      - ../.env
+    environment:
+      APP_ENV: docker
+      QDRANT_URL: http://qdrant:6333
+      MEMGRAPH_URI: bolt://memgraph:7687
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      - qdrant
+      - memgraph
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1',8000),2); s.close()"]
+      interval: 15s
+      timeout: 3s
+      retries: 10
+      start_period: 8s
+    restart: unless-stopped
+
+  dataset-seed:
+    image: axiz/payments-evals-backend:1.0.0
+    container_name: axiz-evals-dataset-seed
+    env_file:
+      - ../.env
+    environment:
+      APP_ENV: docker
+      QDRANT_URL: http://qdrant:6333
+      MEMGRAPH_URI: bolt://memgraph:7687
+    working_dir: /app
+    command: ["python", "datasets/seed.py"]
+    volumes:
+      - ../datasets:/app/datasets:ro
+    depends_on:
+      - qdrant
+      - memgraph
+    restart: "no"
+
+  frontend:
+    image: axiz/payments-evals-frontend:1.0.0
+    build:
+      context: ..
+      dockerfile: infrastructure/docker/Dockerfile.frontend
+    container_name: axiz-evals-frontend
+    env_file:
+      - ../.env
+    environment:
+      BACKEND_URL: http://backend:8000
+      FRONTEND_HOST: 0.0.0.0
+      FRONTEND_PORT: 8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1',8080),2); s.close()"]
+      interval: 15s
+      timeout: 3s
+      retries: 10
+      start_period: 8s
+    restart: unless-stopped
+
+  promptfoo:
+    image: axiz/payments-evals-promptfoo:0.123.1
+    profiles: ["eval-tools"]
+    working_dir: /work
+    volumes:
+      - ../promptfoo:/work:ro
+    environment:
+      BACKEND_URL: http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    command: ["eval", "-c", "/work/promptfooconfig.yaml", "--no-cache"]
+
+volumes:
+  qdrant_data:
+  memgraph_data:

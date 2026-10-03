@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "axiz-payments-evals-backend"
+version = "1.0.0"
+description = "Backend del Payments Agentic RAG Evals Lab"
+requires-python = ">=3.12,<3.14"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["pe.axiz.payments_evals_lab*"]
+namespaces = true

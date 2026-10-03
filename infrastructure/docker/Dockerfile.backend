@@ -1,0 +1,8 @@
+FROM axiz/payments-evals-python-base:1.0.0
+
+WORKDIR /app
+COPY backend/src /app/backend/src
+COPY datasets /app/datasets
+ENV PYTHONPATH=/app/backend/src
+EXPOSE 8000
+CMD ["uvicorn", "pe.axiz.payments_evals_lab.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

@@ -1,0 +1,8 @@
+FROM axiz/payments-evals-python-base:1.0.0
+
+WORKDIR /app
+COPY frontend/src /app/frontend/src
+COPY frontend/assets /app/frontend/assets
+ENV PYTHONPATH=/app/frontend/src
+EXPOSE 8080
+CMD ["python", "-m", "pe.axiz.payments_evals_ui.main"]

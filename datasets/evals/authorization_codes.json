@@ -1,0 +1,6 @@
+[
+  {"code":"00","meaning":"approved","category":"approved","recommended_action":"Continuar con captura o flujo posterior según corresponda.","retryable":false},
+  {"code":"05","meaning":"do not honor","category":"do_not_honor","recommended_action":"Mantener el rechazo y solicitar otro medio de pago; no inferir una causa no informada.","retryable":false},
+  {"code":"14","meaning":"invalid account number","category":"invalid_account","recommended_action":"Validar la captura y solicitar corrección sin exponer el PAN completo.","retryable":false},
+  {"code":"91","meaning":"issuer unavailable","category":"issuer_unavailable","recommended_action":"Aplicar backoff y un reintento controlado; abrir caso si la indisponibilidad persiste.","retryable":true}
+]

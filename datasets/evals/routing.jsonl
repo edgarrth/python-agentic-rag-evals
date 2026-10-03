@@ -1,0 +1,10 @@
+{"query":"Revisa TX-1007 y dime por qué fue rechazada","expected_intent":"transaction_diagnosis","expected_strategy":"hybrid"}
+{"query":"¿Cómo se relaciona TX-1008 con el adquirente y el emisor?","expected_intent":"transaction_diagnosis","expected_strategy":"hybrid"}
+{"query":"Muestra la relación entre ACQ-ALPHA e ISS-ANDES","expected_intent":"relationship_query","expected_strategy":"graphrag"}
+{"query":"Explícame la conciliación y el settlement","expected_intent":"reconciliation","expected_strategy":"raglight"}
+{"query":"¿Qué exige PCI sobre PAN y CVV?","expected_intent":"policy_query","expected_strategy":"hybrid"}
+{"query":"¿Cómo funciona la idempotencia de pagos?","expected_intent":"policy_query","expected_strategy":"hybrid"}
+{"query":"¿Qué es un chargeback en payment processing?","expected_intent":"payment_knowledge","expected_strategy":"native"}
+{"query":"¿Cuál es la capital de Francia?","expected_intent":"out_of_domain","expected_strategy":"native"}
+{"query":"Escribe una receta de ceviche","expected_intent":"out_of_domain","expected_strategy":"native"}
+{"query":"Resuelve esta ecuación de álgebra","expected_intent":"out_of_domain","expected_strategy":"native"}

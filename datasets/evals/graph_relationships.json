@@ -1,0 +1,11 @@
+[
+  {"source":"TX-1007","relationship":"PROCESSED_BY","target":"ACQ-ALPHA"},
+  {"source":"TX-1007","relationship":"AUTHORIZED_BY","target":"ISS-ANDES"},
+  {"source":"TX-1007","relationship":"HAS_CODE","target":"CODE-91"},
+  {"source":"CODE-91","relationship":"DEFINED_IN","target":"authorization_codes.md"},
+  {"source":"TX-1008","relationship":"PROCESSED_BY","target":"ACQ-BETA"},
+  {"source":"TX-1008","relationship":"AUTHORIZED_BY","target":"ISS-PACIFIC"},
+  {"source":"TX-1008","relationship":"IN_SETTLEMENT_BATCH","target":"SETTLE-44"},
+  {"source":"SETTLE-44","relationship":"CHECKED_BY","target":"RECON-MISMATCH-RULE"},
+  {"source":"M-101","relationship":"ROUTED_TO","target":"ACQ-ALPHA"}
+]

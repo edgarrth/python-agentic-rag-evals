@@ -4,6 +4,10 @@
   "candidate": "candidate",
   "baseline": "baseline",
   "prompt_version": "v1",
+  "generation_provider": "deterministic",
   "model": "deterministic",
-  "include_external_judges": false
+  "top_k": 5,
+  "include_external_judges": false,
+  "judge_provider": "deterministic",
+  "judge_model": "deterministic"
 }

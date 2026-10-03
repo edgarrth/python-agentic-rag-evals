@@ -1,0 +1,2 @@
+include:
+  - path: infrastructure/docker-compose.yml

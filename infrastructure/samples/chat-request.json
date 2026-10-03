@@ -2,5 +2,8 @@
   "question": "Revisa TX-1007, explica el rechazo y genera un borrador si corresponde.",
   "strategy": "auto",
   "top_k": 5,
-  "include_case_draft": true
+  "include_case_draft": true,
+  "generation_provider": "deterministic",
+  "model": "deterministic",
+  "prompt_version": "v1"
 }

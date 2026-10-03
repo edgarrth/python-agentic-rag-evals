@@ -16,8 +16,14 @@ class EvalRunStore:
         self._lock = threading.RLock()
         self._max_runs = max_runs
 
-    def create(self, suite: str) -> EvalRunSummary:
-        run = EvalRunSummary(run_id=str(uuid4()), suite=suite, status="queued", started_at=datetime.now(UTC))
+    def create(self, suite: str, request_config: dict | None = None) -> EvalRunSummary:
+        run = EvalRunSummary(
+            run_id=str(uuid4()),
+            suite=suite,
+            status="queued",
+            started_at=datetime.now(UTC),
+            request_config=request_config or {},
+        )
         with self._lock:
             self._runs[run.run_id] = run
             self._events[run.run_id] = asyncio.Queue()

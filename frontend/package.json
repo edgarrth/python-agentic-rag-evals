@@ -1,6 +1,6 @@
 {
   "name": "axiz-payments-agentic-rag-evals-frontend",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "scripts": {
     "start": "ng serve --host 0.0.0.0 --port 8080 --proxy-config proxy.conf.json",

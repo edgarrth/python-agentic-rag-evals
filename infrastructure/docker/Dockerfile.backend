@@ -1,4 +1,4 @@
-FROM axiz/payments-evals-python-base:1.0.0
+FROM python_base
 
 WORKDIR /app
 COPY backend/src /app/backend/src

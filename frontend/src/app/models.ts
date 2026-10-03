@@ -1,3 +1,4 @@
+export type GenerationProvider = 'deterministic' | 'openai';
 export type RagStrategy = 'auto' | 'native' | 'hybrid' | 'graphrag' | 'raglight' | 'lightrag';
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type Workspace = 'chat' | 'evals' | 'runs';
@@ -7,6 +8,34 @@ export interface HealthResponse {
   status: string;
   service: string;
   version: string;
+  runtime?: {
+    generation_provider: string;
+    generation_model: string;
+    embedding_provider: string;
+    embedding_model: string;
+    judge_provider: string;
+    external_judges_enabled: boolean;
+  };
+}
+
+export interface RuntimeOptions {
+  generation_providers: GenerationProvider[];
+  models: Record<GenerationProvider, string[]>;
+  prompt_versions: string[];
+  defaults: {
+    generation_provider: GenerationProvider;
+    model: string;
+    prompt_version: string;
+    judge_provider: GenerationProvider;
+    judge_model: string;
+  };
+  embedding: { provider: string; model: string };
+  external_judges: {
+    enabled_by_env: boolean;
+    openai_key_configured: boolean;
+    deepeval: boolean;
+    ragas: boolean;
+  };
 }
 
 export interface RetrievedContext {
@@ -39,6 +68,9 @@ export interface ChatRequest {
   strategy: RagStrategy;
   top_k: number;
   include_case_draft: boolean;
+  generation_provider: GenerationProvider;
+  model: string;
+  prompt_version: string;
 }
 
 export interface ChatResponse {
@@ -52,6 +84,9 @@ export interface ChatResponse {
   tools: ToolCallTrace[];
   timings_ms: Record<string, number>;
   usage: Record<string, unknown>;
+  generation_provider: string;
+  model: string;
+  prompt_version: string;
 }
 
 export interface StreamEvent {
@@ -126,7 +161,11 @@ export interface EvalRunRequest {
   candidate: string;
   baseline: string;
   prompt_version: string;
+  generation_provider: GenerationProvider;
   model: string;
+  judge_provider: GenerationProvider;
+  judge_model: string;
+  top_k: number;
   include_external_judges: boolean;
 }
 
@@ -141,6 +180,7 @@ export interface EvalRunSummary {
   gates_passed?: boolean | null;
   gate_failures: string[];
   aggregate: Record<string, unknown>;
+  request_config: Record<string, unknown>;
   error?: string | null;
 }
 

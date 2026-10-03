@@ -166,6 +166,9 @@
                           <span><strong>Intent</strong>{{ response.intent }}</span>
                           <span><strong>Estrategia</strong>{{ response.selected_strategy }}</span>
                           <span><strong>Tools</strong>{{ response.tools.length }}</span>
+                          <span><strong>Motor</strong>{{ providerLabel(response.generation_provider) }}</span>
+                          <span><strong>Modelo</strong>{{ response.model }}</span>
+                          <span><strong>Prompt</strong>{{ response.prompt_version }}</span>
                           <span><strong>Latencia</strong>{{ formatMs(response.timings_ms['total']) }}</span>
                         </div>
                         <div class="message-actions">
@@ -224,8 +227,21 @@
                 <select id="strategy-mobile" [(ngModel)]="strategy" [disabled]="chatLoading()">
                   @for (item of strategies; track item.value) { <option [ngValue]="item.value">{{ item.label }}</option> }
                 </select>
+                <label for="chat-provider-mobile">Motor de generación</label>
+                <select id="chat-provider-mobile" [(ngModel)]="chatGenerationProvider" (ngModelChange)="onChatProviderChange()" [disabled]="chatLoading()">
+                  @for (item of providerOptions; track item.value) { <option [ngValue]="item.value">{{ item.label }}</option> }
+                </select>
+                <label for="chat-model-mobile">Modelo</label>
+                <select id="chat-model-mobile" [(ngModel)]="chatModelName" [disabled]="chatLoading() || chatGenerationProvider === 'deterministic'">
+                  @for (model of modelOptions(chatGenerationProvider); track model) { <option [value]="model">{{ model }}</option> }
+                </select>
+                <label for="chat-prompt-mobile">Prompt version</label>
+                <select id="chat-prompt-mobile" [(ngModel)]="chatPromptVersion" [disabled]="chatLoading()">
+                  @for (version of promptVersions(); track version) { <option [value]="version">{{ version }}</option> }
+                </select>
                 <label for="top-k-mobile">Top K: {{ topK }}</label>
                 <input id="top-k-mobile" type="range" min="1" max="10" step="1" [(ngModel)]="topK" [disabled]="chatLoading()">
+                <p class="runtime-inline"><strong>Runtime:</strong> {{ currentChatRuntimeLabel() }}</p>
                 <label class="check-row"><input type="checkbox" [(ngModel)]="includeCaseDraft" [disabled]="chatLoading()"><span>Permitir borrador de caso</span></label>
               </div>
             </details>
@@ -258,6 +274,27 @@
             <select id="strategy" [(ngModel)]="strategy" [disabled]="chatLoading()">
               @for (item of strategies; track item.value) { <option [ngValue]="item.value">{{ item.label }}</option> }
             </select>
+
+            <label for="chat-provider">Motor de generación</label>
+            <select id="chat-provider" [(ngModel)]="chatGenerationProvider" (ngModelChange)="onChatProviderChange()" [disabled]="chatLoading()">
+              @for (item of providerOptions; track item.value) { <option [ngValue]="item.value">{{ item.label }}</option> }
+            </select>
+
+            <label for="chat-model">Modelo</label>
+            <select id="chat-model" [(ngModel)]="chatModelName" [disabled]="chatLoading() || chatGenerationProvider === 'deterministic'">
+              @for (model of modelOptions(chatGenerationProvider); track model) { <option [value]="model">{{ model }}</option> }
+            </select>
+
+            <label for="chat-prompt">Prompt version</label>
+            <select id="chat-prompt" [(ngModel)]="chatPromptVersion" [disabled]="chatLoading()">
+              @for (version of promptVersions(); track version) { <option [value]="version">{{ version }}</option> }
+            </select>
+
+            <div class="runtime-card" [class.external]="chatGenerationProvider === 'openai'">
+              <strong>{{ chatGenerationProvider === 'openai' ? 'LLM externo activo' : 'Modo reproducible' }}</strong>
+              <span>{{ currentChatRuntimeLabel() }}</span>
+              <small>Embeddings: {{ runtimeOptions()?.embedding?.provider || 'hashing' }} · {{ runtimeOptions()?.embedding?.model || 'hashing' }}</small>
+            </div>
 
             <label for="top-k">Top K <span>{{ topK }}</span></label>
             <input id="top-k" type="range" min="1" max="10" step="1" [(ngModel)]="topK" [disabled]="chatLoading()">
@@ -293,22 +330,71 @@
         </div>
 
         <div class="run-config card-surface">
-          <div class="field"><label for="suite">Suite</label><select id="suite" [(ngModel)]="selectedSuite" [disabled]="evalLoading()">@for (entry of objectKeys(suiteCatalog()); track entry) { <option [value]="entry">{{ entry }}</option> }</select></div>
-          <div class="field"><label for="eval-strategy">Estrategia</label><select id="eval-strategy" [(ngModel)]="evalStrategy" [disabled]="evalLoading()">@for (item of strategies; track item.value) { <option [ngValue]="item.value">{{ item.label }}</option> }</select></div>
-          <div class="field"><label for="prompt-version">Prompt version</label><input id="prompt-version" [(ngModel)]="promptVersion" [disabled]="evalLoading()"></div>
-          <div class="field"><label for="model-name">Modelo</label><input id="model-name" [(ngModel)]="modelName" [disabled]="evalLoading()"></div>
-          <label class="check-row external-judge"><input type="checkbox" [(ngModel)]="includeExternalJudges" [disabled]="evalLoading()"><span>DeepEval / RAGAS externos</span></label>
+          <div class="field"><label for="suite">Suite</label><select id="suite" [(ngModel)]="selectedSuite" [disabled]="evalLoading() || benchmarkLoading()">@for (entry of objectKeys(suiteCatalog()); track entry) { <option [value]="entry">{{ entry }}</option> }</select></div>
+          <div class="field"><label for="eval-strategy">Estrategia</label><select id="eval-strategy" [(ngModel)]="evalStrategy" [disabled]="evalLoading() || benchmarkLoading()">@for (item of strategies; track item.value) { <option [ngValue]="item.value">{{ item.label }}</option> }</select></div>
+          <div class="field"><label for="eval-provider">Motor SUT</label><select id="eval-provider" [(ngModel)]="evalGenerationProvider" (ngModelChange)="onEvalProviderChange()" [disabled]="evalLoading() || benchmarkLoading()">@for (item of providerOptions; track item.value) { <option [ngValue]="item.value">{{ item.label }}</option> }</select></div>
+          <div class="field"><label for="prompt-version">Prompt version</label><select id="prompt-version" [(ngModel)]="promptVersion" [disabled]="evalLoading() || benchmarkLoading()">@for (version of promptVersions(); track version) { <option [value]="version">{{ version }}</option> }</select></div>
+          <div class="field"><label for="model-name">Modelo SUT</label><select id="model-name" [(ngModel)]="modelName" [disabled]="evalLoading() || benchmarkLoading() || evalGenerationProvider === 'deterministic'">@for (model of modelOptions(evalGenerationProvider); track model) { <option [value]="model">{{ model }}</option> }</select></div>
+          <div class="field"><label for="eval-top-k">Top K</label><select id="eval-top-k" [(ngModel)]="evalTopK" [disabled]="evalLoading() || benchmarkLoading()">@for (value of [1, 3, 5, 7, 10]; track value) { <option [ngValue]="value">{{ value }}</option> }</select></div>
+          <label class="check-row external-judge"><input type="checkbox" [(ngModel)]="includeExternalJudges" [disabled]="evalLoading() || benchmarkLoading()"><span>Habilitar LLM-as-a-Judge externo</span></label>
+          <div class="field"><label for="judge-provider">Motor Judge</label><select id="judge-provider" [(ngModel)]="judgeProvider" (ngModelChange)="onJudgeProviderChange()" [disabled]="!includeExternalJudges || evalLoading() || benchmarkLoading()">@for (item of providerOptions; track item.value) { <option [ngValue]="item.value">{{ item.label }}</option> }</select></div>
+          <div class="field"><label for="judge-model">Modelo Judge</label><select id="judge-model" [(ngModel)]="judgeModelName" [disabled]="!includeExternalJudges || judgeProvider === 'deterministic' || evalLoading() || benchmarkLoading()">@for (model of modelOptions(judgeProvider); track model) { <option [value]="model">{{ model }}</option> }</select></div>
+          <div class="runtime-summary" [class.external]="evalGenerationProvider === 'openai' || (includeExternalJudges && judgeProvider === 'openai')">
+            <strong>Modo de ejecución</strong><span>{{ currentEvalRuntimeLabel() }}</span>
+            @if (includeExternalJudges && !runtimeOptions()?.external_judges?.enabled_by_env) { <small>El checkbox solicita jueces externos, pero EVAL_JUDGE_ENABLED=false. Se reportará la integración sin ejecutar un juez remoto.</small> }
+            @if ((evalGenerationProvider === 'openai' || (includeExternalJudges && judgeProvider === 'openai')) && !runtimeOptions()?.external_judges?.openai_key_configured) { <small class="text-danger">OPENAI_API_KEY no está configurada en el backend.</small> }
+          </div>
           @if (evalLoading()) {
-            <button class="button danger" type="button" (click)="stopRunMonitoring()">Detener seguimiento</button>
+            <button class="button danger run-action" type="button" (click)="stopRunMonitoring()">Detener seguimiento</button>
           } @else {
-            <button class="button primary" type="button" (click)="runEvaluation()">Ejecutar suite</button>
+            <button class="button primary run-action" type="button" (click)="runEvaluation()" [disabled]="benchmarkLoading()">Ejecutar suite</button>
           }
         </div>
+
+        <section class="benchmark-panel card-surface" aria-labelledby="rag-benchmark-title">
+          <div class="section-heading benchmark-heading">
+            <div><span class="eyebrow">RAG benchmark</span><h3 id="rag-benchmark-title">Comparar todas las estrategias con el mismo Golden Dataset</h3><p>Se mantienen constantes dataset, prompt, modelo, motor y Top K. Solo cambia la estrategia RAG.</p></div>
+            @if (benchmarkLoading()) { <button class="button danger" type="button" (click)="stopBenchmark()">Detener benchmark</button> }
+            @else { <button class="button primary" type="button" (click)="runRagBenchmark()" [disabled]="benchmarkSelection().length < 2 || evalLoading()">Ejecutar comparación</button> }
+          </div>
+          <div class="benchmark-controls">
+            <div class="benchmark-strategies" role="group" aria-label="Estrategias incluidas">
+              @for (item of benchmarkStrategyOptions; track item.value) {
+                <label class="strategy-check"><input type="checkbox" [checked]="isBenchmarkSelected(item.value)" (change)="toggleBenchmarkStrategy(item.value, $any($event.target).checked)" [disabled]="benchmarkLoading()"><span>{{ item.label }}</span></label>
+              }
+            </div>
+            <div class="benchmark-constants">
+              <span><strong>Dataset</strong> Golden RAG</span><span><strong>Top K</strong> {{ evalTopK }}</span><span><strong>SUT</strong> {{ providerLabel(evalGenerationProvider) }} · {{ modelName }}</span><span><strong>Prompt</strong> {{ promptVersion }}</span>
+            </div>
+          </div>
+          @if (benchmarkLoading()) {
+            <div class="benchmark-progress" role="status" aria-live="polite"><div><strong>Benchmark en curso</strong><span>{{ Math.round(benchmarkProgress() * 100) }}%</span></div><div class="progress-track"><span [style.width.%]="benchmarkProgress() * 100"></span></div></div>
+          }
+          @if (benchmarkComparison(); as bench) {
+            <div class="benchmark-summary-grid">
+              <div class="kpi"><span>Mejor calidad</span><strong>{{ benchmarkBestQuality() }}</strong><small>Promedio de métricas RAG</small></div>
+              <div class="kpi"><span>Mejor recall</span><strong>{{ benchmarkBestRecall() }}</strong><small>Context Recall</small></div>
+              <div class="kpi"><span>Menor latencia</span><strong>{{ benchmarkBestLatency() }}</strong><small>Promedio de generación medido</small></div>
+              <div class="kpi"><span>Mejor balance</span><strong>{{ benchmarkBestBalance() }}</strong><small>Calidad con penalización de latencia del 10%</small></div>
+            </div>
+            <div class="metric-table-wrap benchmark-table-wrap">
+              <table class="metric-table comparison-table">
+                <thead><tr><th>Métrica</th>@for (runId of bench.runs; track runId) { <th>{{ humanize(benchmarkRunLabel(runId)) }}</th> }</tr></thead>
+                <tbody>@for (row of benchmarkRows(); track row['metric']) { <tr><td><strong>{{ humanize($any(row['metric'])) }}</strong></td>@for (runId of bench.runs; track runId) { <td class="mono">{{ row[runId] === null ? '—' : scoreText($any(row[runId])) }}</td> }</tr> }</tbody>
+              </table>
+            </div>
+            <div class="benchmark-run-cards">
+              @for (run of benchmarkRuns(); track run.run_id) {
+                <article><strong>{{ humanize(benchmarkRunLabel(run.run_id)) }}</strong><span>Quality {{ scoreText(benchmarkQuality(run)) }}</span><span>Latencia {{ formatMs(benchmarkLatency(run)) }}</span><span [class.text-success]="run.gates_passed === true" [class.text-danger]="run.gates_passed === false">Gates {{ run.gates_passed ? 'PASS' : 'FAIL' }}</span></article>
+              }
+            </div>
+          }
+        </section>
 
         @if (evalLoading() || currentRun()) {
           <div class="run-status card-surface" role="status" aria-live="polite">
             <div class="run-status-head">
-              <div><strong>{{ currentRun()?.run_id || 'Preparando ejecución' }}</strong><span>{{ evalFamily() || statusLabel(currentRun()?.status || 'queued') }}</span></div>
+              <div><strong>{{ currentRun()?.run_id || 'Preparando ejecución' }}</strong><span>{{ evalFamily() || statusLabel(currentRun()?.status || 'queued') }}</span>@if (currentRun()?.request_config; as config) { <small class="run-runtime">SUT {{ providerLabel($any(config['generation_provider'])) }} · {{ config['model'] || 'deterministic' }} · Prompt {{ config['prompt_version'] || 'v1' }} · Judge {{ providerLabel($any(config['judge_provider'])) }}</small> }</div>
               <span class="status-badge" [class.pass]="currentRun()?.gates_passed === true" [class.fail]="currentRun()?.gates_passed === false">{{ currentRun()?.gates_passed === true ? 'Gates PASS' : currentRun()?.gates_passed === false ? 'Gates FAIL' : statusLabel(currentRun()?.status || 'running') }}</span>
             </div>
             <div class="progress-track" [attr.aria-valuenow]="Math.round((evalLoading() ? evalProgress() : currentRun()?.progress || 0) * 100)" aria-valuemin="0" aria-valuemax="100" role="progressbar">
@@ -393,19 +479,22 @@
     @if (workspace() === 'runs') {
       <section class="workspace runs-workspace">
         <div class="workspace-header split">
-          <div><span class="eyebrow">Regression workflow</span><h2>Historial de runs</h2><p>Selecciona entre dos y cuatro ejecuciones para comparar métricas homónimas.</p></div>
+          <div><span class="eyebrow">Regression workflow</span><h2>Historial de runs</h2><p>Selecciona entre dos y diez ejecuciones para comparar métricas homónimas.</p></div>
           <div class="workspace-actions"><button class="button secondary" type="button" (click)="refreshRuns()">Actualizar</button><button class="button primary" type="button" (click)="compareRuns()" [disabled]="compareSelection().length < 2 || comparisonLoading()">Comparar ({{ compareSelection().length }})</button></div>
         </div>
 
         <div class="metric-table-wrap">
           <table class="metric-table runs-table">
-            <thead><tr><th>Comparar</th><th>Run</th><th>Suite</th><th>Inicio</th><th>Estado</th><th>Gates</th><th>Métricas</th><th></th></tr></thead>
+            <thead><tr><th>Comparar</th><th>Run</th><th>Suite</th><th>Estrategia</th><th>Motor / Modelo</th><th>Prompt</th><th>Inicio</th><th>Estado</th><th>Gates</th><th>Métricas</th><th></th></tr></thead>
             <tbody>
               @for (run of runs(); track run.run_id) {
                 <tr>
-                  <td><input type="checkbox" [checked]="isRunSelected(run.run_id)" [disabled]="compareSelection().length >= 4 && !isRunSelected(run.run_id)" (change)="toggleRunSelection(run.run_id, $any($event.target).checked)" [attr.aria-label]="'Seleccionar run ' + run.run_id"></td>
+                  <td><input type="checkbox" [checked]="isRunSelected(run.run_id)" [disabled]="compareSelection().length >= 10 && !isRunSelected(run.run_id)" (change)="toggleRunSelection(run.run_id, $any($event.target).checked)" [attr.aria-label]="'Seleccionar run ' + run.run_id"></td>
                   <td class="mono"><strong>{{ run.run_id.slice(0, 8) }}</strong></td>
                   <td>{{ run.suite }}</td>
+                  <td>{{ humanize($any(run.request_config['strategy'] || 'auto')) }}</td>
+                  <td>{{ providerLabel($any(run.request_config['generation_provider'])) }} · {{ run.request_config['model'] || 'deterministic' }}</td>
+                  <td>{{ run.request_config['prompt_version'] || 'v1' }}</td>
                   <td>{{ formatDate(run.started_at) }}</td>
                   <td><span class="status-badge" [class.pass]="run.status === 'completed'" [class.fail]="run.status === 'failed'">{{ statusLabel(run.status) }}</span></td>
                   <td><span class="status-badge" [class.pass]="run.gates_passed === true" [class.fail]="run.gates_passed === false">{{ run.gates_passed === true ? 'PASS' : run.gates_passed === false ? 'FAIL' : '—' }}</span></td>
@@ -413,7 +502,7 @@
                   <td><button class="text-button" type="button" (click)="openRun(run.run_id)">Abrir</button></td>
                 </tr>
               } @empty {
-                <tr><td colspan="8"><div class="table-empty">No hay runs disponibles todavía.</div></td></tr>
+                <tr><td colspan="11"><div class="table-empty">No hay runs disponibles todavía.</div></td></tr>
               }
             </tbody>
           </table>

@@ -9,4 +9,4 @@ COPY frontend/package*.json /app/
 RUN if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
 
 LABEL org.opencontainers.image.title="Axiz Payments Evals Node Base" \
-      org.opencontainers.image.version="1.0.0"
+      org.opencontainers.image.version="1.1.0"

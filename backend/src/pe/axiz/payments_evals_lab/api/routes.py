@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from pe.axiz.payments_evals_lab.domain.models import ChatRequest, CompareRequest, EvalRunRequest, EvalRunSummary
+from pe.axiz.payments_evals_lab.domain.models import ChatRequest, CompareRequest, EvalRunRequest, EvalRunSummary, GenerationProvider
 from pe.axiz.payments_evals_lab.observability.tracing import trace_store
 from pe.axiz.payments_evals_lab.services.container import get_container
 from pe.axiz.payments_evals_lab.services.eval_run_store import eval_run_store
@@ -25,7 +25,52 @@ def sse(event: str, payload: dict) -> str:
 @router.get("/health")
 async def health() -> dict:
     container = get_container()
-    return {"status": "ok", "service": container.settings.app_name, "version": "1.0.0"}
+    settings = container.settings
+    return {
+        "status": "ok",
+        "service": settings.app_name,
+        "version": "1.1.0",
+        "runtime": {
+            "generation_provider": settings.generation_provider,
+            "generation_model": settings.openai_model if settings.generation_provider == "openai" else "deterministic",
+            "embedding_provider": settings.embedding_provider,
+            "embedding_model": "hashing",
+            "judge_provider": settings.judge_provider,
+            "external_judges_enabled": settings.eval_judge_enabled,
+        },
+    }
+
+
+@router.get("/api/v1/runtime/options")
+async def runtime_options() -> dict:
+    container = get_container()
+    settings = container.settings
+    prompt_versions = container.controller.generator.prompt_versions() if container.controller.generator is not None else ["v1"]
+    return {
+        "generation_providers": ["deterministic", "openai"],
+        "models": {
+            "deterministic": ["deterministic"],
+            "openai": settings.openai_model_options,
+        },
+        "prompt_versions": prompt_versions,
+        "defaults": {
+            "generation_provider": settings.generation_provider,
+            "model": settings.openai_model if settings.generation_provider == "openai" else "deterministic",
+            "prompt_version": prompt_versions[0],
+            "judge_provider": settings.judge_provider,
+            "judge_model": settings.openai_model if settings.judge_provider == "openai" else "deterministic",
+        },
+        "embedding": {
+            "provider": settings.embedding_provider,
+            "model": "hashing",
+        },
+        "external_judges": {
+            "enabled_by_env": settings.eval_judge_enabled,
+            "openai_key_configured": bool(settings.openai_api_key),
+            "deepeval": settings.deepeval_enabled,
+            "ragas": settings.ragas_enabled,
+        },
+    }
 
 
 @router.post("/api/v1/chat/stream")
@@ -94,10 +139,13 @@ async def _execute_eval(run: EvalRunSummary, request: EvalRunRequest) -> None:
             request.strategy,
             request.include_external_judges,
             progress=progress,
+            generation_provider=request.generation_provider,
+            model=request.model,
+            prompt_version=request.prompt_version,
+            judge_provider=request.judge_provider,
+            judge_model=request.judge_model,
+            top_k=request.top_k,
         )
-        for result in metrics:
-            result.model = request.model
-            result.prompt_version = request.prompt_version
         run.metrics = metrics
         run.gates_passed = gates_passed
         run.gate_failures = failures
@@ -119,7 +167,8 @@ async def _execute_eval(run: EvalRunSummary, request: EvalRunRequest) -> None:
 async def create_run(request: EvalRunRequest) -> dict:
     if request.suite not in get_container().eval_runner.suites():
         raise HTTPException(status_code=422, detail="Suite no soportada")
-    run = eval_run_store.create(request.suite)
+    config = request.model_dump(mode="json")
+    run = eval_run_store.create(request.suite, request_config=config)
     asyncio.create_task(_execute_eval(run, request))
     return {"run_id": run.run_id, "status": run.status, "stream": f"/api/v1/evals/runs/{run.run_id}/stream"}
 
@@ -183,6 +232,9 @@ async def get_trace(trace_id: str) -> dict:
 class PromptEvalRequest(BaseModel):
     prompt: str = Field(min_length=2, max_length=4000)
     strategy: str = "auto"
+    generation_provider: GenerationProvider = GenerationProvider.DETERMINISTIC
+    model: str = "deterministic"
+    prompt_version: str = "v1"
 
 
 @router.post("/api/v1/evals/prompt")
@@ -193,10 +245,22 @@ async def prompt_eval(request: PromptEvalRequest) -> dict:
         strategy = RagStrategy(request.strategy)
     except ValueError:
         strategy = RagStrategy.AUTO
-    response = await get_container().controller.run(ChatRequest(question=request.prompt, strategy=strategy, include_case_draft=False))
+    response = await get_container().controller.run(
+        ChatRequest(
+            question=request.prompt,
+            strategy=strategy,
+            include_case_draft=False,
+            generation_provider=request.generation_provider,
+            model=request.model,
+            prompt_version=request.prompt_version,
+        )
+    )
     return {
         "output": response.answer,
         "trace_id": response.trace_id,
         "strategy": response.selected_strategy,
         "intent": response.intent,
+        "generation_provider": response.generation_provider,
+        "model": response.model,
+        "prompt_version": response.prompt_version,
     }

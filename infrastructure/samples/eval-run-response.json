@@ -5,8 +5,18 @@
   "progress": 1.0,
   "gates_passed": true,
   "gate_failures": [],
+  "request_config": {
+    "strategy": "auto",
+    "generation_provider": "deterministic",
+    "model": "deterministic",
+    "prompt_version": "v1",
+    "top_k": 5,
+    "include_external_judges": false,
+    "judge_provider": "deterministic",
+    "judge_model": "deterministic"
+  },
   "aggregate": {
-    "rag_generation": 0.90,
+    "rag_generation": 0.9,
     "agentic": 0.96,
     "safety": 1.0,
     "voice_stt": 1.0

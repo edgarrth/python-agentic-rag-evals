@@ -19,10 +19,12 @@ import {
   ConversationGroup,
   EvalRunSummary,
   EvalView,
+  GenerationProvider,
   ExecutionStep,
   ExecutionTrace,
   MetricResult,
   RagStrategy,
+  RuntimeOptions,
   StreamEvent,
   Workspace
 } from './models';
@@ -49,6 +51,7 @@ export class AppComponent implements OnInit {
   private chatAbort?: AbortController;
   private runAbort?: AbortController;
   private followStream = true;
+  private benchmarkAbort?: AbortController;
 
   readonly strategies: Array<{ value: RagStrategy; label: string }> = [
     { value: 'auto', label: 'Adaptive Routing' },
@@ -57,6 +60,13 @@ export class AppComponent implements OnInit {
     { value: 'graphrag', label: 'GraphRAG' },
     { value: 'raglight', label: 'RAGLight' },
     { value: 'lightrag', label: 'LightRAG' }
+  ];
+
+
+  readonly benchmarkStrategyOptions: Array<{ value: RagStrategy; label: string }> = this.strategies.filter((item) => item.value !== 'auto');
+  readonly providerOptions: Array<{ value: GenerationProvider; label: string; help: string }> = [
+    { value: 'deterministic', label: 'Determinista (sin LLM externo)', help: 'Sin LLM externo; salida reproducible basada en reglas y evidencia.' },
+    { value: 'openai', label: 'OpenAI Responses API', help: 'Generación real mediante OpenAI Responses API con el modelo seleccionado.' }
   ];
 
   readonly examples = [
@@ -88,21 +98,29 @@ export class AppComponent implements OnInit {
   notice = signal('');
   errorMessage = signal('');
 
+  runtimeOptions = signal<RuntimeOptions | null>(null);
   conversations = signal<Conversation[]>([]);
   activeConversationId = signal('');
   question = '';
   strategy: RagStrategy = 'auto';
   topK = 5;
   includeCaseDraft = true;
+  chatGenerationProvider: GenerationProvider = 'deterministic';
+  chatModelName = 'deterministic';
+  chatPromptVersion = 'v1';
   chatLoading = signal(false);
   showJumpToLatest = signal(false);
 
   suiteCatalog = signal<Record<string, string[]>>({});
   selectedSuite = 'full';
   evalStrategy: RagStrategy = 'auto';
+  evalTopK = 5;
+  evalGenerationProvider: GenerationProvider = 'deterministic';
   includeExternalJudges = false;
   promptVersion = 'v1';
   modelName = 'deterministic';
+  judgeProvider: GenerationProvider = 'deterministic';
+  judgeModelName = 'deterministic';
   evalLoading = signal(false);
   evalProgress = signal(0);
   evalFamily = signal('');
@@ -114,6 +132,11 @@ export class AppComponent implements OnInit {
   compareSelection = signal<string[]>([]);
   comparison = signal<ComparisonResponse | null>(null);
   comparisonLoading = signal(false);
+  benchmarkSelection = signal<RagStrategy[]>(['native', 'hybrid', 'graphrag', 'raglight', 'lightrag']);
+  benchmarkLoading = signal(false);
+  benchmarkProgress = signal(0);
+  benchmarkRuns = signal<EvalRunSummary[]>([]);
+  benchmarkComparison = signal<ComparisonResponse | null>(null);
 
   selectedTrace = signal<ExecutionTrace | null>(null);
   traceLoading = signal(false);
@@ -137,7 +160,7 @@ export class AppComponent implements OnInit {
   async ngOnInit(): Promise<void> {
     this.restoreConversations();
     if (!this.activeConversationId()) this.newConversation();
-    await Promise.allSettled([this.checkHealth(), this.loadSuites(), this.refreshRuns()]);
+    await Promise.allSettled([this.checkHealth(), this.loadRuntimeOptions(), this.loadSuites(), this.refreshRuns()]);
   }
 
   conversationGroups(): ConversationGroup[] {
@@ -183,6 +206,65 @@ export class AppComponent implements OnInit {
     } catch {
       this.apiStatus.set('offline');
     }
+  }
+
+
+  async loadRuntimeOptions(): Promise<void> {
+    try {
+      const options = await this.api.runtimeOptions();
+      this.runtimeOptions.set(options);
+      this.chatGenerationProvider = options.defaults.generation_provider;
+      this.chatModelName = options.defaults.model;
+      this.chatPromptVersion = options.defaults.prompt_version;
+      this.evalGenerationProvider = options.defaults.generation_provider;
+      this.modelName = options.defaults.model;
+      this.promptVersion = options.defaults.prompt_version;
+      this.judgeProvider = options.defaults.judge_provider;
+      this.judgeModelName = options.defaults.judge_model;
+      this.normalizeModels();
+    } catch (error) {
+      this.errorMessage.set(this.errorText(error));
+    }
+  }
+
+  modelOptions(provider: GenerationProvider): string[] {
+    return this.runtimeOptions()?.models?.[provider] || (provider === 'deterministic' ? ['deterministic'] : []);
+  }
+
+  promptVersions(): string[] {
+    return this.runtimeOptions()?.prompt_versions || ['v1'];
+  }
+
+  onChatProviderChange(): void {
+    this.chatModelName = this.defaultModel(this.chatGenerationProvider);
+  }
+
+  onEvalProviderChange(): void {
+    this.modelName = this.defaultModel(this.evalGenerationProvider);
+  }
+
+  onJudgeProviderChange(): void {
+    this.judgeModelName = this.defaultModel(this.judgeProvider);
+  }
+
+  providerLabel(provider: string | null | undefined): string {
+    if (provider === 'openai') return 'OpenAI';
+    if (provider === 'deterministic') return 'Determinista';
+    return provider || '—';
+  }
+
+  currentChatRuntimeLabel(): string {
+    return this.chatGenerationProvider === 'openai'
+      ? `OpenAI · ${this.chatModelName} · ${this.chatPromptVersion}`
+      : `Determinista · sin LLM externo · ${this.chatPromptVersion}`;
+  }
+
+  currentEvalRuntimeLabel(): string {
+    const sut = this.evalGenerationProvider === 'openai' ? `OpenAI · ${this.modelName}` : 'Determinista';
+    const judge = this.includeExternalJudges
+      ? `${this.providerLabel(this.judgeProvider)} · ${this.judgeModelName}`
+      : 'Determinista / reglas';
+    return `SUT: ${sut} · Judge: ${judge} · Prompt: ${this.promptVersion}`;
   }
 
   useExample(example: string): void {
@@ -280,7 +362,10 @@ export class AppComponent implements OnInit {
           request_id: crypto.randomUUID(),
           strategy: this.strategy,
           top_k: this.topK,
-          include_case_draft: this.includeCaseDraft
+          include_case_draft: this.includeCaseDraft,
+          generation_provider: this.chatGenerationProvider,
+          model: this.chatModelName,
+          prompt_version: this.chatPromptVersion
         },
         (event) => this.handleChatEvent(assistantId, event),
         controller.signal
@@ -390,8 +475,12 @@ export class AppComponent implements OnInit {
         strategy: this.evalStrategy,
         candidate: 'candidate',
         baseline: 'baseline',
-        prompt_version: this.promptVersion.trim() || 'v1',
-        model: this.modelName.trim() || 'deterministic',
+        prompt_version: this.promptVersion || 'v1',
+        generation_provider: this.evalGenerationProvider,
+        model: this.modelName || 'deterministic',
+        judge_provider: this.includeExternalJudges ? this.judgeProvider : 'deterministic',
+        judge_model: this.includeExternalJudges ? this.judgeModelName : 'deterministic',
+        top_k: this.evalTopK,
         include_external_judges: this.includeExternalJudges
       });
       this.currentRun.set({
@@ -402,7 +491,16 @@ export class AppComponent implements OnInit {
         progress: 0,
         metrics: [],
         gate_failures: [],
-        aggregate: {}
+        aggregate: {},
+        request_config: {
+          strategy: this.evalStrategy,
+          generation_provider: this.evalGenerationProvider,
+          model: this.modelName,
+          prompt_version: this.promptVersion,
+          judge_provider: this.includeExternalJudges ? this.judgeProvider : 'deterministic',
+          judge_model: this.includeExternalJudges ? this.judgeModelName : 'deterministic',
+          top_k: this.evalTopK
+        }
       });
 
       await this.api.runStream(created.run_id, (event) => this.handleRunEvent(event), controller.signal);
@@ -423,6 +521,114 @@ export class AppComponent implements OnInit {
       this.evalLoading.set(false);
       this.runAbort = undefined;
     }
+  }
+
+
+  toggleBenchmarkStrategy(strategy: RagStrategy, checked: boolean): void {
+    const current = this.benchmarkSelection();
+    if (checked && !current.includes(strategy)) this.benchmarkSelection.set([...current, strategy]);
+    if (!checked) this.benchmarkSelection.set(current.filter((item) => item !== strategy));
+  }
+
+  isBenchmarkSelected(strategy: RagStrategy): boolean {
+    return this.benchmarkSelection().includes(strategy);
+  }
+
+  async runRagBenchmark(): Promise<void> {
+    const selected = this.benchmarkSelection().filter((item) => item !== 'auto');
+    if (!selected.length || this.benchmarkLoading()) return;
+    this.benchmarkLoading.set(true);
+    this.benchmarkProgress.set(0);
+    this.benchmarkRuns.set([]);
+    this.benchmarkComparison.set(null);
+    this.errorMessage.set('');
+    const controller = new AbortController();
+    this.benchmarkAbort = controller;
+    try {
+      const completed: EvalRunSummary[] = [];
+      for (let index = 0; index < selected.length; index += 1) {
+        const ragStrategy = selected[index];
+        const created = await this.api.createRun({
+          suite: 'rag',
+          strategy: ragStrategy,
+          candidate: 'benchmark-candidate',
+          baseline: 'benchmark-baseline',
+          prompt_version: this.promptVersion || 'v1',
+          generation_provider: this.evalGenerationProvider,
+          model: this.modelName || 'deterministic',
+          judge_provider: this.includeExternalJudges ? this.judgeProvider : 'deterministic',
+          judge_model: this.includeExternalJudges ? this.judgeModelName : 'deterministic',
+          top_k: this.evalTopK,
+          include_external_judges: this.includeExternalJudges
+        });
+        await this.api.runStream(created.run_id, () => undefined, controller.signal);
+        const run = await this.api.run(created.run_id);
+        completed.push(run);
+        this.benchmarkRuns.set([...completed]);
+        this.benchmarkProgress.set((index + 1) / selected.length);
+      }
+      const ids = completed.map((run) => run.run_id);
+      if (ids.length >= 2) this.benchmarkComparison.set(await this.api.compare(ids));
+      this.compareSelection.set(ids);
+      await this.refreshRuns();
+      this.notice.set(`Benchmark RAG completado para ${completed.length} estrategias con el mismo Golden Dataset y configuración.`);
+    } catch (error) {
+      if (controller.signal.aborted) this.notice.set('Benchmark detenido desde la interfaz.');
+      else this.errorMessage.set(this.errorText(error));
+    } finally {
+      this.benchmarkLoading.set(false);
+      this.benchmarkAbort = undefined;
+    }
+  }
+
+  stopBenchmark(): void {
+    this.benchmarkAbort?.abort();
+  }
+
+  benchmarkRows(): Array<Record<string, string | number | null>> {
+    const wanted = new Set(['mrr', 'ndcg@5', 'precision@5', 'recall@5', 'context_precision', 'context_recall', 'context_relevancy', 'faithfulness', 'groundedness', 'answer_relevancy', 'correctness', 'hallucination']);
+    return (this.benchmarkComparison()?.comparison || []).filter((row) => wanted.has(String(row['metric'])));
+  }
+
+  benchmarkRunLabel(runId: string): string {
+    const run = this.benchmarkRuns().find((item) => item.run_id === runId) || this.runs().find((item) => item.run_id === runId);
+    return String(run?.request_config?.['strategy'] || runId.slice(0, 8));
+  }
+
+  benchmarkQuality(run: EvalRunSummary): number {
+    const scored = run.metrics.filter((item) => item.score !== null && item.dimension !== 'integration');
+    return scored.length ? scored.reduce((sum, item) => sum + (item.score || 0), 0) / scored.length : 0;
+  }
+
+  benchmarkLatency(run: EvalRunSummary): number {
+    const values = run.metrics.map((item) => item.latency_ms).filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+    return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+  }
+
+  benchmarkBestQuality(): string {
+    return this.bestBenchmarkRun((run) => this.benchmarkQuality(run), false);
+  }
+
+  benchmarkBestRecall(): string {
+    const comparison = this.benchmarkComparison();
+    if (!comparison) return '—';
+    const row = comparison.comparison.find((item) => item['metric'] === 'context_recall');
+    return row ? this.bestRunFromComparisonRow(row, false) : '—';
+  }
+
+  benchmarkBestLatency(): string {
+    return this.bestBenchmarkRun((run) => this.benchmarkLatency(run), true);
+  }
+
+  benchmarkBestBalance(): string {
+    const runs = this.benchmarkRuns();
+    if (!runs.length) return '—';
+    const maxLatency = Math.max(...runs.map((run) => this.benchmarkLatency(run)), 1);
+    const ranked = runs.map((run) => ({
+      run,
+      score: this.benchmarkQuality(run) - (this.benchmarkLatency(run) / maxLatency) * 0.10
+    })).sort((a, b) => b.score - a.score);
+    return this.benchmarkRunLabel(ranked[0].run.run_id);
   }
 
   stopRunMonitoring(): void {
@@ -498,7 +704,7 @@ export class AppComponent implements OnInit {
 
   toggleRunSelection(runId: string, checked: boolean): void {
     const current = this.compareSelection();
-    if (checked && !current.includes(runId) && current.length < 4) this.compareSelection.set([...current, runId]);
+    if (checked && !current.includes(runId) && current.length < 10) this.compareSelection.set([...current, runId]);
     if (!checked) this.compareSelection.set(current.filter((id) => id !== runId));
   }
 
@@ -564,6 +770,32 @@ export class AppComponent implements OnInit {
 
   objectKeys(value: Record<string, unknown> | null | undefined): string[] {
     return Object.keys(value || {});
+  }
+
+  private defaultModel(provider: GenerationProvider): string {
+    return this.modelOptions(provider)[0] || (provider === 'deterministic' ? 'deterministic' : '');
+  }
+
+  private normalizeModels(): void {
+    if (!this.modelOptions(this.chatGenerationProvider).includes(this.chatModelName)) this.chatModelName = this.defaultModel(this.chatGenerationProvider);
+    if (!this.modelOptions(this.evalGenerationProvider).includes(this.modelName)) this.modelName = this.defaultModel(this.evalGenerationProvider);
+    if (!this.modelOptions(this.judgeProvider).includes(this.judgeModelName)) this.judgeModelName = this.defaultModel(this.judgeProvider);
+  }
+
+  private bestBenchmarkRun(selector: (run: EvalRunSummary) => number, lowerIsBetter: boolean): string {
+    const runs = this.benchmarkRuns().filter((run) => Number.isFinite(selector(run)));
+    if (!runs.length) return '—';
+    const ranked = [...runs].sort((a, b) => lowerIsBetter ? selector(a) - selector(b) : selector(b) - selector(a));
+    return this.benchmarkRunLabel(ranked[0].run_id);
+  }
+
+  private bestRunFromComparisonRow(row: Record<string, string | number | null>, lowerIsBetter: boolean): string {
+    const values = (this.benchmarkComparison()?.runs || [])
+      .map((runId) => ({ runId, value: row[runId] }))
+      .filter((item): item is { runId: string; value: number } => typeof item.value === 'number');
+    if (!values.length) return '—';
+    values.sort((a, b) => lowerIsBetter ? a.value - b.value : b.value - a.value);
+    return this.benchmarkRunLabel(values[0].runId);
   }
 
   private handleChatEvent(messageId: string, event: StreamEvent): void {

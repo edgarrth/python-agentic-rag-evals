@@ -9,6 +9,7 @@ import {
   EvalRunSummary,
   ExecutionTrace,
   HealthResponse,
+  RuntimeOptions,
   StreamEvent,
   SuiteCatalog
 } from '../models';
@@ -21,6 +22,10 @@ export class ApiService {
 
   health(): Promise<HealthResponse> {
     return firstValueFrom(this.http.get<HealthResponse>('/health'));
+  }
+
+  runtimeOptions(): Promise<RuntimeOptions> {
+    return firstValueFrom(this.http.get<RuntimeOptions>(`${this.apiBase}/runtime/options`));
   }
 
   suites(): Promise<SuiteCatalog> {

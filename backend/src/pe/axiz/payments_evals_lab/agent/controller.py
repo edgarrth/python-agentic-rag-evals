@@ -9,6 +9,7 @@ from pe.axiz.payments_evals_lab.domain.models import ChatRequest, ChatResponse, 
 from pe.axiz.payments_evals_lab.observability.tracing import TraceStore
 from pe.axiz.payments_evals_lab.rag.router import AdaptiveRouter
 from pe.axiz.payments_evals_lab.rag.service import RagService
+from pe.axiz.payments_evals_lab.services.generation import GenerationService
 from pe.axiz.payments_evals_lab.services.session_store import SessionStore
 from pe.axiz.payments_evals_lab.tools.registry import ToolRegistry
 
@@ -28,12 +29,14 @@ class AgenticController:
         rag_service: RagService,
         traces: TraceStore,
         sessions: SessionStore,
+        generator: GenerationService | None = None,
     ) -> None:
         self.router = router
         self.registry = registry
         self.rag_service = rag_service
         self.traces = traces
         self.sessions = sessions
+        self.generator = generator
 
     async def run(self, request: ChatRequest, sink: EventSink | None = None) -> ChatResponse:
         started = time.perf_counter()
@@ -58,7 +61,16 @@ class AgenticController:
             answer = "La consulta está fuera del dominio de payment processing configurado para este laboratorio. Se requiere una pregunta relacionada con transacciones, autorización, adquirencia, conciliación, PCI o políticas de pagos."
             total_ms = (time.perf_counter() - started) * 1000
             trace.answer = answer
-            trace.usage = {"input_tokens": self._token_count(request.question), "output_tokens": self._token_count(answer), "latency_ms": total_ms}
+            provider = request.generation_provider.value
+            model = request.model if provider == "openai" else "deterministic"
+            trace.usage = {
+                "input_tokens": self._token_count(request.question),
+                "output_tokens": self._token_count(answer),
+                "latency_ms": total_ms,
+                "generation_provider": provider,
+                "model": model,
+                "prompt_version": request.prompt_version,
+            }
             self.sessions.append_turn(session_id, "assistant", answer, trace_id=trace.trace_id)
             self.traces.append(trace.trace_id, TraceStage.COMPLETED, "Consulta fuera de dominio", total_ms=total_ms)
             await self._emit(sink, "completed", "Respuesta completada", answer=answer)
@@ -73,6 +85,9 @@ class AgenticController:
                 tools=[],
                 timings_ms={"routing": route_ms, "retrieval": 0.0, "generation": 0.0, "total": total_ms},
                 usage=trace.usage,
+                generation_provider=provider,
+                model=model,
+                prompt_version=request.prompt_version,
             )
 
         tool_calls = []
@@ -129,14 +144,51 @@ class AgenticController:
                 await self._emit(sink, "tool", "Borrador de caso generado", detail=str(draft.get("case_id") if draft else "sin borrador"))
 
         generation_started = time.perf_counter()
-        await self._emit(sink, "generation", "Generando respuesta fundamentada")
-        answer = self._compose_answer(request.question, transaction, code_detail, contexts, draft)
+        provider = request.generation_provider.value
+        requested_model = request.model if provider == "openai" else "deterministic"
+        await self._emit(
+            sink,
+            "generation",
+            "Generando respuesta fundamentada",
+            detail=f"motor={provider} · modelo={requested_model} · prompt={request.prompt_version}",
+            provider=provider,
+            model=requested_model,
+            prompt_version=request.prompt_version,
+        )
+        if self.generator is not None:
+            generated = await self.generator.generate(
+                question=request.question,
+                transaction=transaction,
+                code_detail=code_detail,
+                contexts=contexts,
+                draft=draft,
+                provider=provider,
+                model=request.model,
+                prompt_version=request.prompt_version,
+            )
+            answer = generated.text
+            provider = generated.provider
+            requested_model = generated.model
+            input_tokens = generated.input_tokens
+            output_tokens = generated.output_tokens
+            raw_usage = generated.raw_usage
+        else:
+            if provider != "deterministic":
+                raise RuntimeError("El proveedor OpenAI no está disponible en este controlador")
+            answer = self._compose_answer(request.question, transaction, code_detail, contexts, draft)
+            input_tokens = self._token_count(request.question) + sum(self._token_count(ctx.text) for ctx in contexts)
+            output_tokens = self._token_count(answer)
+            raw_usage = {}
         generation_ms = (time.perf_counter() - generation_started) * 1000
         total_ms = (time.perf_counter() - started) * 1000
         usage = {
-            "input_tokens": self._token_count(request.question) + sum(self._token_count(ctx.text) for ctx in contexts),
-            "output_tokens": self._token_count(answer),
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
             "latency_ms": total_ms,
+            "generation_provider": provider,
+            "model": requested_model,
+            "prompt_version": request.prompt_version,
+            "provider_usage": raw_usage,
         }
         trace.answer = answer
         trace.usage = usage
@@ -158,6 +210,9 @@ class AgenticController:
             tools=tool_calls,
             timings_ms={"routing": route_ms, "retrieval": retrieval_ms, "generation": generation_ms, "total": total_ms},
             usage=usage,
+            generation_provider=provider,
+            model=requested_model,
+            prompt_version=request.prompt_version,
         )
 
     @staticmethod

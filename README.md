@@ -22,6 +22,21 @@ Se evalúa una arquitectura completa de RAG y comportamiento agentic con un **Go
 
 Las métricas de voz se incluyen como una **suite offline basada en fixtures controlados**. Se calculan WER, TTFC, RTF, MOS, diarización, barge-in, robustez de acento y métricas relacionadas, pero no se incorpora un runtime de audio. De esta manera se cubre el temario completo sin agregar infraestructura ajena al caso principal.
 
+## Modos de ejecución y modelos
+
+La PoC distingue de forma explícita el **motor del sistema bajo prueba (SUT)** del **motor que actúa como juez**. La GUI muestra esta información antes de ejecutar y la conserva dentro de cada run y de cada respuesta de chat.
+
+- **Determinista**: no se realiza una llamada a un LLM externo. La síntesis se genera con reglas controladas y la mayor parte de las Evals se calcula mediante métricas deterministas. Es el modo por defecto para reproducibilidad, CI/CD y comparación local.
+- **OpenAI**: la generación del chat y de las familias de suites que requieren una respuesta del SUT se realiza mediante OpenAI Responses API con el modelo seleccionado en el combobox. Requiere `OPENAI_API_KEY`. Las métricas puramente deterministas —por ejemplo retrieval clásico, routing o cálculos de clasificación— no invocan el modelo aunque el run conserve la configuración del SUT para trazabilidad.
+- **Judge determinista / reglas**: no se realiza una llamada de juez externo; se utilizan fórmulas, reglas, similitud y métricas reproducibles.
+- **Judge OpenAI**: cuando se habilita LLM-as-a-Judge y `EVAL_JUDGE_ENABLED=true`, DeepEval puede utilizar el modelo de juez seleccionado. RAGAS se mantiene como integración disponible y las métricas RAGAS-compatible deterministas continúan siendo los resultados canónicos del benchmark.
+
+Los combobox de **Motor SUT**, **Modelo SUT**, **Prompt version**, **Motor Judge** y **Modelo Judge** evitan que un valor escrito manualmente aparente activar un modelo que en realidad no se utilizó. En modo determinista el campo de modelo queda fijado en `deterministic`. Los modelos OpenAI visibles se obtienen de `OPENAI_MODELS` y el prompt se obtiene de `datasets/prompts/`.
+
+La configuración deja de ser una etiqueta visual: `generation_provider=openai` provoca una llamada real al proveedor configurado; `generation_provider=deterministic` garantiza que no se realice ninguna llamada externa. La misma información se devuelve en chat, se almacena en cada run y queda visible en historial y comparación.
+
+El retrieval utiliza embeddings hashing deterministas en toda la matriz RAG para que Native, Hybrid, GraphRAG, RAGLight y LightRAG se comparen sin introducir una segunda variable experimental.
+
 ## Caso de uso funcional
 
 El flujo principal analiza una transacción rechazada, obtiene sus datos, interpreta el código de autorización, consulta la documentación operativa y genera un borrador de caso cuando la política lo requiere.
@@ -92,9 +107,9 @@ La instrumentación forma parte del diseño. La traza contiene eventos observabl
 
 | Componente | Responsabilidad |
 |---|---|
-| Frontend Angular | Chat SSE, trazas, evidencia, tools, ejecución de suites, dashboards por dimensión, historial y comparación de runs. Se reutilizan identidad visual y assets del frontend entregado como referencia. |
+| Frontend Angular | Chat SSE, trazas, evidencia, tools, selección explícita de motor/modelo/prompt, benchmark RAG, dashboards por dimensión, historial y comparación de runs. Se reutilizan identidad visual y assets del frontend entregado como referencia. |
 | FastAPI | API tipada, SSE, ejecución de suites, runs, comparación y trazas. |
-| Agentic Controller | Interpreta la consulta, conserva estado de sesión, ejecuta tools y sintetiza una respuesta fundamentada. |
+| Agentic Controller | Interpreta la consulta, conserva estado de sesión, ejecuta tools y sintetiza una respuesta fundamentada mediante el motor determinista u OpenAI seleccionado. |
 | Adaptive Router | Clasifica intent, OOD y estrategia RAG de forma explícita y evaluable. |
 | Tool Registry | Registra esquemas Pydantic, valida argumentos y captura latencia, errores y resultados. |
 | RAG Layer | Expone Native, Hybrid, GraphRAG, RAGLight y LightRAG bajo una interfaz común. |
@@ -120,7 +135,12 @@ Se aplican las siguientes prácticas de experiencia de usuario:
 - trazas completas en un drawer separado para no contaminar el contenido funcional;
 - visualización de tools, argumentos, schema validation, latencia y evidencia recuperada;
 - dashboard por dimensiones con score, pass rate, quality gates, filtros, búsqueda y detalle técnico;
-- historial de runs con selección de dos a cuatro ejecuciones y comparación de métricas homónimas;
+- configuración de runtime mediante combobox para motor SUT, modelo, prompt version, motor Judge y modelo Judge;
+- identificación visible del motor realmente usado en cada respuesta de chat y en cada run;
+- benchmark RAG de Native, Hybrid, GraphRAG, RAGLight y LightRAG sobre el mismo Golden Dataset y las mismas constantes experimentales;
+- matriz comparativa con MRR, nDCG@5, Precision@5, Recall@5, Context Precision/Recall/Relevancy, Faithfulness, Groundedness, Answer Relevancy, Correctness y Hallucination;
+- resumen de mejor calidad, mejor recall, menor latencia y mejor balance calidad/latencia;
+- historial de runs con selección de dos a diez ejecuciones y comparación de métricas homónimas;
 - feedback de estados mediante texto, forma y color, evitando depender exclusivamente del color;
 - foco visible, navegación por teclado, `aria-live`, etiquetas accesibles, skip link y preferencia `prefers-reduced-motion`;
 - confirmación antes de eliminar conversaciones y persistencia local acotada del historial;
@@ -213,10 +233,11 @@ datasets/
 │   └── tests/
 ├── frontend/                 Angular 21 con UI de chat, Evals, runs y trazas
 │   └── src/app/             componente principal, modelos y servicio API
-├── infrastructure/           Docker Compose, Dockerfiles, scripts y contratos de ejemplo
-├── datasets/                 corpus y Golden Dataset versionado
+├── infrastructure/           definición Compose, Dockerfiles, scripts y contratos de ejemplo
+├── datasets/                 corpus, prompts versionados y Golden Dataset
 ├── promptfoo/                configuración declarativa de pruebas Promptfoo
 ├── requirements/             dependencias runtime y desarrollo fijadas
+├── compose.yaml              punto de entrada de Docker Compose desde la raíz
 ├── .env.example              plantilla completa de propiedades
 ├── environment.yml           entorno local Conda
 ├── pyproject.toml            reglas comunes de tooling
@@ -227,7 +248,7 @@ El namespace principal del backend es `pe.axiz.payments_evals_lab`. El frontend 
 
 ## Código principal
 
-`agent/controller.py` implementa la orquestación. Se resuelve el intent, se selecciona la estrategia, se invocan tools tipadas y se sintetiza una respuesta. Las decisiones observables se incorporan a `ExecutionTrace`.
+`agent/controller.py` implementa la orquestación. Se resuelve el intent, se selecciona la estrategia, se invocan tools tipadas y se sintetiza una respuesta. `services/generation.py` ejecuta la generación real seleccionada: modo determinista o OpenAI Responses API. El proveedor, modelo y versión de prompt utilizados se registran en la respuesta y en la traza. Las decisiones observables se incorporan a `ExecutionTrace`.
 
 `tools/registry.py` centraliza validación Pydantic, ejecución sync/async, captura de errores y medición de latencia. Las tools de negocio se implementan en `tools/payment_tools.py`.
 
@@ -245,27 +266,30 @@ El orden siguiente corresponde al flujo normal de ejecución.
 
 | Orden | Método y endpoint | Descripción funcional | Descripción técnica |
 |---:|---|---|---|
-| 1 | `GET /health` | Verifica disponibilidad del backend. | Respuesta liviana; los health checks de contenedor usan socket TCP para no generar spam HTTP. |
-| 2 | `POST /api/v1/chat/stream` | Analiza una consulta de payment processing. | SSE con eventos de routing, tools, retrieval, generación y resultado final. |
-| 3 | `GET /api/v1/chat/sessions/{session_id}` | Recupera el estado conversacional de una sesión. | Expone turnos persistidos en memoria acotada de la PoC. |
-| 4 | `GET /api/v1/traces/{trace_id}` | Inspecciona la ejecución del agente. | Devuelve eventos observables, tools, retrieval y uso; no incluye razonamiento privado. |
-| 5 | `GET /api/v1/evals/suites` | Lista suites disponibles. | Devuelve familias incluidas en cada suite. |
-| 6 | `POST /api/v1/evals/runs` | Inicia un run de evaluación. | Crea un run asíncrono y devuelve su `run_id`. |
-| 7 | `GET /api/v1/evals/runs/{run_id}/stream` | Observa progreso de la suite. | SSE con familia actual, avance y evento final. |
-| 8 | `GET /api/v1/evals/runs/{run_id}` | Consulta métricas y gates. | Devuelve resultados normalizados y agregados. |
-| 9 | `GET /api/v1/evals/runs` | Lista runs recientes. | Almacén acotado en memoria para la PoC. |
-| 10 | `POST /api/v1/evals/compare` | Compara dos o más runs. | Agrega métricas homónimas por `run_id`. |
-| 11 | `POST /api/v1/evals/prompt` | Ejecuta un prompt contra el agente. | Endpoint HTTP utilizado por Promptfoo. |
+| 1 | `GET /health` | Verifica disponibilidad del backend. | Expone también un resumen del runtime activo; los health checks de contenedor usan socket TCP para no generar spam HTTP. |
+| 2 | `GET /api/v1/runtime/options` | Obtiene opciones reales de ejecución. | Devuelve motores soportados, modelos OpenAI configurados, prompts versionados, embedding activo y estado de jueces externos. |
+| 3 | `POST /api/v1/chat/stream` | Analiza una consulta de payment processing. | SSE con eventos de routing, tools, retrieval, generación y resultado final; recibe motor, modelo y prompt version. |
+| 4 | `GET /api/v1/chat/sessions/{session_id}` | Recupera el estado conversacional de una sesión. | Expone turnos persistidos en memoria acotada de la PoC. |
+| 5 | `GET /api/v1/traces/{trace_id}` | Inspecciona la ejecución del agente. | Devuelve eventos observables, tools, retrieval y uso; no incluye razonamiento privado. |
+| 6 | `GET /api/v1/evals/suites` | Lista suites disponibles. | Devuelve familias incluidas en cada suite. |
+| 7 | `POST /api/v1/evals/runs` | Inicia un run de evaluación. | Crea un run asíncrono y conserva `strategy`, SUT provider/model, prompt, Judge provider/model y Top K. |
+| 8 | `GET /api/v1/evals/runs/{run_id}/stream` | Observa progreso de la suite. | SSE con familia actual, avance y evento final. |
+| 9 | `GET /api/v1/evals/runs/{run_id}` | Consulta métricas y gates. | Devuelve resultados normalizados, agregados y configuración exacta del run. |
+| 10 | `GET /api/v1/evals/runs` | Lista runs recientes. | Almacén acotado en memoria para la PoC. |
+| 11 | `POST /api/v1/evals/compare` | Compara de dos a diez runs. | Agrega métricas homónimas por `run_id`; la GUI permite comparar las cinco estrategias RAG simultáneamente. |
+| 12 | `POST /api/v1/evals/prompt` | Ejecuta un prompt contra el agente. | Endpoint HTTP utilizado por Promptfoo con runtime explícito. |
 
 ## Preparación
 
-Todos los comandos se ejecutan desde la raíz del proyecto.
+Todos los comandos se ejecutan desde la raíz del proyecto. Para el flujo Docker se requiere Docker Engine con BuildKit y Docker Compose plugin 2.24 o superior, ya que se utilizan `include`, build contexts entre servicios y condiciones de dependencia.
+
+La ejecución Docker utiliza una configuración reproducible por defecto y no requiere crear un archivo `.env` para iniciar la PoC. Cuando se necesite cambiar proveedores, modelos, thresholds o credenciales, puede crearse un `.env` a partir de `.env.example`; Docker Compose lo carga automáticamente desde la raíz.
 
 ```bash
 cp .env.example .env
 ```
 
-La descripción de cada propiedad, los valores posibles y ejemplos de configuración se mantienen exclusivamente en `.env.example` para evitar duplicidad documental.
+Este paso es opcional para la configuración determinista incluida. La descripción de cada propiedad, los valores posibles y ejemplos se mantienen exclusivamente en `.env.example` para evitar duplicidad documental.
 
 ## Ejecución local con Conda y solo infraestructura en Docker
 
@@ -279,7 +303,7 @@ conda activate axiz-payments-evals
 En una terminal se levantan únicamente Qdrant y Memgraph:
 
 ```bash
-docker compose -f infrastructure/docker-compose.yml up qdrant memgraph
+docker compose up qdrant memgraph
 ```
 
 En otra terminal, desde la raíz y con el entorno Conda activo, se precarga el dataset:
@@ -309,47 +333,67 @@ Se accede a:
 
 ## Ejecución completa con Docker Compose
 
-Se construyen imágenes base separadas para Python y Node. La base Python contiene las dependencias del backend y la base Node contiene las dependencias de Angular. Las imágenes de aplicación reutilizan esas capas, de modo que un cambio de código no obliga a reinstalar dependencias mientras los manifiestos permanezcan sin cambios.
+La solución completa se construye y se inicia con un único comando ejecutado desde la raíz:
 
 ```bash
-./infrastructure/scripts/build_base_images.sh
+docker compose up
 ```
 
-Se construyen las imágenes de aplicación a partir de esa base:
+No se requiere ejecutar previamente `docker build`, `docker compose build` ni el script de imágenes base. El `compose.yaml` raíz incluye la definición mantenida en `infrastructure/docker-compose.yml`.
 
-```bash
-docker compose -f infrastructure/docker-compose.yml build backend frontend
-```
+Durante la misma ejecución se realizan automáticamente estas etapas:
 
-Se levanta la solución completa. `dataset-seed` termina con código `0` después de cargar Qdrant y Memgraph:
+- se construye la imagen base Python con todas las dependencias del backend;
+- se construye la imagen base Node con las dependencias de Angular;
+- se construye el backend reutilizando la imagen base Python mediante un build context de Compose;
+- se construye el frontend Angular reutilizando la imagen base Node y se genera el bundle de producción;
+- se descargan e inician Qdrant y Memgraph;
+- se espera a que el backend quede saludable;
+- se ejecuta `dataset-seed` de forma idempotente;
+- se inicia el frontend únicamente cuando el backend está disponible y el seed finalizó correctamente.
 
-```bash
-docker compose -f infrastructure/docker-compose.yml up
-```
+Los servicios construibles usan `pull_policy: build`. Por ello `docker compose up` ejecuta el build requerido sin necesidad de `--build`. Docker BuildKit conserva la caché de capas: las dependencias Python y Node no se reinstalan cuando sus manifiestos no cambian, aunque se vuelva a evaluar el build de las imágenes de aplicación.
+
+`python-base` y `node-base` son servicios de preparación de imagen que terminan correctamente después de dejar disponibles las imágenes base reutilizables. `dataset-seed` también termina con código `0` cuando Qdrant y Memgraph quedan precargados. Estos contenedores finalizados son parte esperada del proceso de arranque.
 
 No se utiliza `-d`, por lo que los logs permanecen visibles. El health check del backend abre un socket TCP y el frontend utiliza `/healthz` servido directamente por Nginx con `access_log off`; los probes no generan ruido periódico en los logs de aplicación.
+
+Una vez completado el arranque se accede a:
+
+- Frontend: `http://localhost:8080`
+- API: `http://localhost:8000`
+- OpenAPI: `http://localhost:8000/docs`
+- Qdrant: `http://localhost:6333`
 
 Para detener y eliminar los contenedores:
 
 ```bash
-docker compose -f infrastructure/docker-compose.yml down
+docker compose down
 ```
 
 Para recrear explícitamente los contenedores después de un cambio de configuración:
 
 ```bash
-docker compose -f infrastructure/docker-compose.yml up --force-recreate
+docker compose up --force-recreate
 ```
+
+El script `./infrastructure/scripts/build_base_images.sh` se conserva únicamente como utilidad opcional cuando se desea precalentar de forma explícita las imágenes base; no forma parte del flujo normal de arranque.
 
 ## Ejecución de Promptfoo
 
 Promptfoo se mantiene como herramienta de evaluación y no como servicio persistente. Se utiliza un profile de Compose:
 
 ```bash
-docker compose -f infrastructure/docker-compose.yml --profile eval-tools run --rm promptfoo
+docker compose --profile eval-tools run --rm promptfoo
 ```
 
-La configuración se encuentra en `promptfoo/promptfooconfig.yaml` y consume `/api/v1/evals/prompt`. Las aserciones deterministas funcionan contra el backend. Las rúbricas que utilicen un juez externo requieren que el proveedor correspondiente se encuentre habilitado.
+`promptfoo/promptfooconfig.yaml` es la suite reproducible que utiliza el SUT determinista y aserciones que no requieren un proveedor externo. `promptfoo/promptfooconfig.external.yaml` ejecuta deliberadamente el SUT con OpenAI y conserva rúbricas LLM externas. Ambas consumen `/api/v1/evals/prompt`, cuyo response informa motor, modelo y prompt realmente utilizados.
+
+La suite externa se ejecuta solamente de forma explícita y requiere `OPENAI_API_KEY`:
+
+```bash
+docker compose --profile eval-tools-external run --rm promptfoo-external
+```
 
 ## Pruebas por curl
 
@@ -367,7 +411,15 @@ Respuesta esperada:
 {
   "status": "ok",
   "service": "Payments Agentic RAG Evals Lab",
-  "version": "1.0.0"
+  "version": "1.1.0",
+  "runtime": {
+    "generation_provider": "deterministic",
+    "generation_model": "deterministic",
+    "embedding_provider": "hashing",
+    "embedding_model": "hashing",
+    "judge_provider": "deterministic",
+    "external_judges_enabled": false
+  }
 }
 ```
 
@@ -479,6 +531,20 @@ curl -s \
   http://localhost:8000/api/v1/evals/compare | python -m json.tool
 ```
 
+## Benchmark RAG desde la GUI
+
+En **Evals > RAG benchmark** se seleccionan dos o más estrategias; por defecto se incluyen Native RAG, Hybrid RAG, GraphRAG, RAGLight y LightRAG. Un único botón ejecuta la suite `rag` para cada estrategia manteniendo constantes el Golden Dataset, el motor SUT, el modelo, la versión de prompt y `Top K`. Al finalizar se realiza automáticamente la comparación de los cinco runs.
+
+La tabla resultante permite contrastar retrieval y generación sin mezclar configuraciones. El resumen superior identifica mejor calidad media, mejor Context Recall, menor latencia observada y un balance que aplica una penalización máxima del 10% por latencia sobre el score de calidad. Los cinco runs quedan además disponibles en **Historial y comparación**.
+
+El mismo benchmark puede ejecutarse desde consola junto con la suite completa mediante:
+
+```bash
+PYTHONPATH=backend/src python backend/scripts/run_evals_matrix.py
+```
+
+El resultado normalizado se guarda en `.runtime/evals-matrix.json`.
+
 ## Flujo de evaluación recomendado
 
 Se utiliza el mismo Golden Dataset para baseline y candidate. El procedimiento habitual queda así:
@@ -495,21 +561,23 @@ Este flujo permite distinguir un error de retrieval de uno de generación, una s
 
 ## Verificación del proyecto
 
-Se incluye un script de verificación ejecutable desde la raíz:
+Para validación rápida de código y build se utiliza:
 
 ```bash
 ./infrastructure/scripts/verify.sh
 ```
 
-El script realiza:
+Se ejecutan `compileall`, `pytest`, build de producción de Angular y validaciones de Compose.
 
-- compilación de los módulos Python con `compileall`;
-- ejecución completa de `pytest`;
-- instalación de dependencias del frontend cuando `node_modules` no existe;
-- build de producción de Angular;
-- validación estructural del YAML de Docker Compose.
+Para ejecutar **todos los sets de pruebas y Evals** se incluye un único comando:
 
-La validación realizada sobre la entrega incluye **8 tests aprobados**, compilación Python, ejecución end-to-end de la suite `full` con **320 métricas**, **22 dimensiones** y **quality gates críticos aprobados**, además de validación de Docker Compose, sintaxis de Nginx y comprobación estática estricta del TypeScript adaptado. El entorno usado para empaquetar no dispone de Docker y no tiene acceso al registro npm, por lo que no fue posible descargar `node_modules` para ejecutar aquí el build real de Angular. `./infrastructure/scripts/verify.sh` ejecuta ese build automáticamente en Fedora/WSL cuando existe acceso al registro npm.
+```bash
+./infrastructure/scripts/test_all.sh
+```
+
+Ese flujo ejecuta, en orden, la verificación completa, la suite `full`, el benchmark sobre las cinco estrategias RAG, el arranque de la aplicación mediante Compose y la suite Promptfoo determinista. La aplicación queda levantada al finalizar para inspección desde la GUI. La matriz de resultados se conserva en `.runtime/evals-matrix.json`.
+
+La validación realizada sobre esta entrega incluye **12 tests aprobados**, compilación Python, suite `full` con **320 métricas** y quality gates críticos aprobados, además de ejecución programática de la suite `rag` para **Native, Hybrid, GraphRAG, RAGLight y LightRAG**. También se comprobó TypeScript en modo estricto. El entorno usado para empaquetar no dispone de un daemon Docker operativo ni de `node_modules` descargados, por lo que el build real de Angular y la ejecución de Compose/Promptfoo quedan automatizados para Fedora/WSL mediante los scripts anteriores y no se reportan como ejecutados artificialmente.
 
 ## Tecnologías principales
 
@@ -521,7 +589,7 @@ La validación realizada sobre la entrega incluye **8 tests aprobados**, compila
 
 **Pydantic** define requests, responses, tools, trazas y resultados de evaluación con validación explícita.
 
-**Qdrant** mantiene el índice vectorial. Se utiliza un embedding hashing determinista por defecto para reproducibilidad offline; puede cambiarse mediante configuración sin alterar el contrato de retrieval.
+**Qdrant** mantiene el índice vectorial. Se utiliza un embedding hashing determinista en esta PoC para reproducibilidad offline y para que el benchmark entre estrategias RAG mantenga constante el embedding.
 
 **Memgraph** representa relaciones de payment processing y habilita GraphRAG, multi-hop y Evals de entidades/relaciones.
 
@@ -539,7 +607,7 @@ Se evita infraestructura innecesaria. Qdrant y Memgraph son los únicos stores e
 
 Se separan métricas diagnósticas de quality gates. De esta forma se conservan señales sensibles sin convertir cada threshold exploratorio en un bloqueo de release.
 
-Se utiliza un embedding hashing determinista como opción base para que la PoC pueda probarse sin descargar modelos. La interfaz permite evolucionar a un proveedor de embeddings real sin modificar las Evals.
+Se utiliza un embedding hashing determinista como variable controlada del experimento RAG. El cambio futuro de embeddings se mantiene fuera de esta PoC para no mezclar proveedor de embedding con estrategia RAG en la misma comparación.
 
 Se utilizan drafts para operaciones de negocio. La evaluación de Task Completion y tools se realiza sobre comportamiento real del agente sin producir efectos externos.
 

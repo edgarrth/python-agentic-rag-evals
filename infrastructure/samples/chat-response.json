@@ -5,12 +5,27 @@
   "answer": "La transacción TX-1007 figura como declined por 125.50 PEN. El código de autorización 91 corresponde a issuer unavailable. Se recomienda aplicar backoff y un reintento controlado. Se generó un borrador no destructivo del caso.",
   "selected_strategy": "hybrid",
   "intent": "transaction_diagnosis",
+  "generation_provider": "deterministic",
+  "model": "deterministic",
+  "prompt_version": "v1",
   "contexts": [
-    {"source": "authorization_codes.md", "score": 1.0}
+    {
+      "source": "authorization_codes.md",
+      "score": 1.0
+    }
   ],
   "tools": [
-    {"tool": "get_transaction", "schema_valid": true},
-    {"tool": "lookup_authorization_code", "schema_valid": true},
-    {"tool": "create_case_draft", "schema_valid": true}
+    {
+      "tool": "get_transaction",
+      "schema_valid": true
+    },
+    {
+      "tool": "lookup_authorization_code",
+      "schema_valid": true
+    },
+    {
+      "tool": "create_case_draft",
+      "schema_valid": true
+    }
   ]
 }

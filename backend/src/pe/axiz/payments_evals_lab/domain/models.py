@@ -7,6 +7,11 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
 
+class GenerationProvider(StrEnum):
+    DETERMINISTIC = "deterministic"
+    OPENAI = "openai"
+
+
 class RagStrategy(StrEnum):
     NATIVE = "native"
     HYBRID = "hybrid"
@@ -103,6 +108,9 @@ class ChatRequest(BaseModel):
     strategy: RagStrategy = RagStrategy.AUTO
     top_k: int = Field(default=5, ge=1, le=10)
     include_case_draft: bool = True
+    generation_provider: GenerationProvider = GenerationProvider.DETERMINISTIC
+    model: str = "deterministic"
+    prompt_version: str = "v1"
 
 
 class ChatResponse(BaseModel):
@@ -116,6 +124,9 @@ class ChatResponse(BaseModel):
     tools: list[ToolCallTrace]
     timings_ms: dict[str, float]
     usage: dict[str, Any]
+    generation_provider: str = "deterministic"
+    model: str = "deterministic"
+    prompt_version: str = "v1"
 
 
 class MetricResult(BaseModel):
@@ -151,7 +162,11 @@ class EvalRunRequest(BaseModel):
     candidate: str = "candidate"
     baseline: str = "baseline"
     prompt_version: str = "v1"
+    generation_provider: GenerationProvider = GenerationProvider.DETERMINISTIC
     model: str = "deterministic"
+    judge_provider: GenerationProvider = GenerationProvider.DETERMINISTIC
+    judge_model: str = "deterministic"
+    top_k: int = Field(default=5, ge=1, le=10)
     include_external_judges: bool = False
 
 
@@ -166,6 +181,7 @@ class EvalRunSummary(BaseModel):
     gates_passed: bool | None = None
     gate_failures: list[str] = Field(default_factory=list)
     aggregate: dict[str, Any] = Field(default_factory=dict)
+    request_config: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
 
 

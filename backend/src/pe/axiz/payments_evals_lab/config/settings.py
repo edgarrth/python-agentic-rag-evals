@@ -29,11 +29,12 @@ class Settings(BaseSettings):
     memgraph_user: str = ""
     memgraph_password: str = ""
 
-    embedding_provider: str = Field(default="hashing", pattern="^(hashing|openai)$")
+    embedding_provider: str = Field(default="hashing", pattern="^hashing$")
     embedding_dimensions: int = 384
     openai_api_key: str = ""
-    openai_model: str = "gpt-5.6-mini"
-    openai_embedding_model: str = "text-embedding-3-small"
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_model: str = "gpt-6-luna"
+    openai_models: str = "gpt-6-luna,gpt-6.1-sol,gpt-6-astra"
     generation_provider: str = Field(default="deterministic", pattern="^(deterministic|openai)$")
     judge_provider: str = Field(default="deterministic", pattern="^(deterministic|openai)$")
 
@@ -53,6 +54,13 @@ class Settings(BaseSettings):
     request_timeout_seconds: float = 45.0
     tool_timeout_seconds: float = 8.0
     max_top_k: int = 10
+
+    @property
+    def openai_model_options(self) -> list[str]:
+        values = [item.strip() for item in self.openai_models.split(",") if item.strip()]
+        if self.openai_model and self.openai_model not in values:
+            values.insert(0, self.openai_model)
+        return values
 
 
 @lru_cache

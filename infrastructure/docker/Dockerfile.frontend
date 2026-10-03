@@ -1,8 +1,10 @@
-FROM axiz/payments-evals-python-base:1.0.0
+FROM axiz/payments-evals-node-base:1.0.0 AS build
 
 WORKDIR /app
-COPY frontend/src /app/frontend/src
-COPY frontend/assets /app/frontend/assets
-ENV PYTHONPATH=/app/frontend/src
-EXPOSE 8080
-CMD ["python", "-m", "pe.axiz.payments_evals_ui.main"]
+COPY frontend/ /app/
+RUN npm run build
+
+FROM nginx:1.29-alpine
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist/frontend/browser /usr/share/nginx/html
+EXPOSE 80

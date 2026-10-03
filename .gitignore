@@ -11,3 +11,6 @@ build/
 .runtime/
 .qdrant_storage/
 .memgraph_data/
+node_modules/
+frontend/node_modules/
+frontend/dist/

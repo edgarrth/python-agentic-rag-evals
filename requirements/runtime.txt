@@ -10,7 +10,6 @@ scikit-learn==1.9.1
 jsonschema==4.26.0
 PyYAML==6.0.3
 tenacity==9.1.2
-nicegui==3.17.0
 jiwer==4.0.0
 rouge-score==0.1.2
 deepeval==4.2.3

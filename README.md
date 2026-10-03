@@ -2,7 +2,7 @@
 
 PoC de evaluación avanzada para aplicaciones RAG, LLM y Agentic AI aplicada a **payment processing**. El objetivo técnico es disponer de un laboratorio reproducible que permita localizar una degradación en routing, herramientas, retrieval, generación, conversación, seguridad, performance o regresión, en lugar de reducir la validación a una revisión manual de la respuesta final.
 
-Se mantiene un agente deliberadamente pequeño y observable. Se simulan transacciones, códigos de autorización, conciliación, adquirentes, emisores y políticas operativas. Las operaciones sensibles se representan como borradores no destructivos, por lo que no se modifica ningún sistema externo.
+Se mantiene un agente deliberadamente pequeño, observable y con autonomía operativa acotada dentro de cada solicitud. Puede resolver routing, ejecutar tools de dominio según la consulta y los resultados obtenidos, recuperar evidencia y finalizar una tarea, pero no inicia objetivos por cuenta propia ni ejecuta acciones destructivas. Se simulan transacciones, códigos de autorización, conciliación, adquirentes, emisores y políticas operativas. Las operaciones sensibles se representan como borradores no destructivos, por lo que no se modifica ningún sistema externo.
 
 La implementación elimina OCR y cualquier infraestructura que no aporte al objetivo de Evals. Se utilizan únicamente Qdrant y Memgraph como servicios persistentes. PostgreSQL, Kafka, MongoDB, KurrentDB, InfluxDB y Drools no se incorporan porque no existe una necesidad técnica directa en esta prueba de concepto.
 
@@ -46,7 +46,7 @@ Se agregan casos complementarios para conciliación multi-hop, idempotencia, PCI
 
 ```mermaid
 flowchart LR
-    U[Usuario] --> UI[Frontend Python / NiceGUI]
+    U[Usuario] --> UI[Frontend Angular]
     UI -->|HTTP + SSE| API[FastAPI]
 
     API --> AC[Agentic Controller]
@@ -92,7 +92,7 @@ La instrumentación forma parte del diseño. La traza contiene eventos observabl
 
 | Componente | Responsabilidad |
 |---|---|
-| Frontend Python / NiceGUI | Chat, streaming, evidencia, tools, dashboard de Evals y vistas por dimensión. Mantiene la identidad visual del proyecto de referencia. |
+| Frontend Angular | Chat SSE, trazas, evidencia, tools, ejecución de suites, dashboards por dimensión, historial y comparación de runs. Se reutilizan identidad visual y assets del frontend entregado como referencia. |
 | FastAPI | API tipada, SSE, ejecución de suites, runs, comparación y trazas. |
 | Agentic Controller | Interpreta la consulta, conserva estado de sesión, ejecuta tools y sintetiza una respuesta fundamentada. |
 | Adaptive Router | Clasifica intent, OOD y estrategia RAG de forma explícita y evaluable. |
@@ -105,6 +105,28 @@ La instrumentación forma parte del diseño. La traza contiene eventos observabl
 | RAGAS | Adaptador de integración para métricas RAG. Las métricas equivalentes deterministas siempre se ejecutan. |
 | Promptfoo | Suite declarativa de prompts, formato, seguridad, red team y regresión a través del endpoint HTTP del backend. |
 | Golden Dataset | Casos de referencia versionados para RAG, agentes, routing, graph, prompts, safety, conversación, performance, drift y voz. |
+
+## Experiencia de usuario del frontend
+
+El frontend se reorganiza alrededor de tres áreas: **Chat agentic**, **Evals** y **Runs**. Se evita exponer complejidad técnica en la respuesta principal; routing, tools, retrieval y detalles de evaluación se muestran en paneles progresivos y trazas bajo demanda.
+
+Se aplican las siguientes prácticas de experiencia de usuario:
+
+- navegación responsive con sidebar en escritorio y drawer en pantallas pequeñas;
+- estados vacíos con ejemplos accionables para reducir el tiempo hasta la primera prueba;
+- composer persistente con envío por `Enter`, salto de línea con `Shift+Enter` y contador de longitud;
+- streaming SSE con etapas discretas, posibilidad de detener el seguimiento y errores recuperables;
+- autoscroll inteligente: sigue nuevos mensajes únicamente cuando el usuario permanece cerca del final y ofrece una acción para regresar al último mensaje;
+- trazas completas en un drawer separado para no contaminar el contenido funcional;
+- visualización de tools, argumentos, schema validation, latencia y evidencia recuperada;
+- dashboard por dimensiones con score, pass rate, quality gates, filtros, búsqueda y detalle técnico;
+- historial de runs con selección de dos a cuatro ejecuciones y comparación de métricas homónimas;
+- feedback de estados mediante texto, forma y color, evitando depender exclusivamente del color;
+- foco visible, navegación por teclado, `aria-live`, etiquetas accesibles, skip link y preferencia `prefers-reduced-motion`;
+- confirmación antes de eliminar conversaciones y persistencia local acotada del historial;
+- diseño responsive sin tablas truncadas: las tablas técnicas mantienen scroll horizontal cuando la densidad no permite una reducción segura.
+
+La pestaña de Voice Evals visualiza métricas offline del temario. No se incorpora captura o reproducción de audio porque el runtime principal continúa orientado a payment processing textual.
 
 ## Estrategias RAG
 
@@ -189,9 +211,8 @@ datasets/
 ├── backend/                  API, agente, RAG, tools y motor de Evals
 │   ├── src/pe/axiz/payments_evals_lab/
 │   └── tests/
-├── frontend/                 interfaz Python con NiceGUI y assets reutilizados
-│   ├── src/pe/axiz/payments_evals_ui/
-│   └── assets/
+├── frontend/                 Angular 21 con UI de chat, Evals, runs y trazas
+│   └── src/app/             componente principal, modelos y servicio API
 ├── infrastructure/           Docker Compose, Dockerfiles, scripts y contratos de ejemplo
 ├── datasets/                 corpus y Golden Dataset versionado
 ├── promptfoo/                configuración declarativa de pruebas Promptfoo
@@ -202,7 +223,7 @@ datasets/
 └── README.md                 documentación única del proyecto
 ```
 
-El namespace principal del backend es `pe.axiz.payments_evals_lab`. El namespace del frontend es `pe.axiz.payments_evals_ui`.
+El namespace principal del backend es `pe.axiz.payments_evals_lab`. El frontend se mantiene como aplicación Angular independiente y consume los contratos HTTP/SSE del backend mediante rutas relativas `/api`.
 
 ## Código principal
 
@@ -273,7 +294,7 @@ Se inicia el backend:
 ./infrastructure/scripts/run_backend.sh
 ```
 
-En otra terminal con el mismo entorno Conda se inicia el frontend:
+En otra terminal se inicia el frontend Angular. Se requiere Node.js compatible con Angular 21; no se utiliza Conda para el runtime de Node:
 
 ```bash
 ./infrastructure/scripts/run_frontend.sh
@@ -288,7 +309,7 @@ Se accede a:
 
 ## Ejecución completa con Docker Compose
 
-La imagen Python base se construye una sola vez. Contiene las dependencias y se reutiliza en backend y frontend, por lo que los cambios de código no obligan a reinstalar paquetes.
+Se construyen imágenes base separadas para Python y Node. La base Python contiene las dependencias del backend y la base Node contiene las dependencias de Angular. Las imágenes de aplicación reutilizan esas capas, de modo que un cambio de código no obliga a reinstalar dependencias mientras los manifiestos permanezcan sin cambios.
 
 ```bash
 ./infrastructure/scripts/build_base_images.sh
@@ -306,7 +327,7 @@ Se levanta la solución completa. `dataset-seed` termina con código `0` despué
 docker compose -f infrastructure/docker-compose.yml up
 ```
 
-No se utiliza `-d`, por lo que los logs permanecen visibles. Los health checks de backend y frontend abren un socket TCP y el backend se ejecuta con access log deshabilitado; de esta manera los probes no llenan continuamente la consola.
+No se utiliza `-d`, por lo que los logs permanecen visibles. El health check del backend abre un socket TCP y el frontend utiliza `/healthz` servido directamente por Nginx con `access_log off`; los probes no generan ruido periódico en los logs de aplicación.
 
 Para detener y eliminar los contenedores:
 
@@ -482,21 +503,21 @@ Se incluye un script de verificación ejecutable desde la raíz:
 
 El script realiza:
 
-- compilación de todos los módulos Python con `compileall`;
+- compilación de los módulos Python con `compileall`;
 - ejecución completa de `pytest`;
+- instalación de dependencias del frontend cuando `node_modules` no existe;
+- build de producción de Angular;
 - validación estructural del YAML de Docker Compose.
 
-La entrega fue validada con **8 tests aprobados**, compilación Python sin errores y ejecución offline de la suite `full` con **320 resultados normalizados**, **21 dimensiones agregadas** y **quality gates críticos aprobados**.
-
-La construcción real de imágenes Docker debe ejecutarse en Fedora/WSL con Docker disponible. El entorno usado para empaquetar la entrega no dispone del binario Docker, por lo que se validaron Dockerfiles y Compose de forma estática y se verificó el runtime Python mediante tests y ejecución end-to-end del motor de Evals.
+La validación realizada sobre la entrega incluye **8 tests aprobados**, compilación Python, ejecución end-to-end de la suite `full` con **320 métricas**, **22 dimensiones** y **quality gates críticos aprobados**, además de validación de Docker Compose, sintaxis de Nginx y comprobación estática estricta del TypeScript adaptado. El entorno usado para empaquetar no dispone de Docker y no tiene acceso al registro npm, por lo que no fue posible descargar `node_modules` para ejecutar aquí el build real de Angular. `./infrastructure/scripts/verify.sh` ejecuta ese build automáticamente en Fedora/WSL cuando existe acceso al registro npm.
 
 ## Tecnologías principales
 
-**Python 3.12** se utiliza para backend, frontend y scripts de aplicación. El entorno local se administra con Conda; los contenedores utilizan Python directamente.
+**Python 3.12** se utiliza para backend, Evals, RAG, tools, datasets y scripts de aplicación. El entorno local de Python se administra con Conda; dentro de los contenedores se ejecuta Python directamente.
 
 **FastAPI** implementa contratos HTTP, OpenAPI, ejecución asíncrona y streams SSE.
 
-**NiceGUI** permite conservar una experiencia web rica usando código Python, evitando mantener un frontend TypeScript separado. La interfaz reutiliza el lenguaje visual y assets del proyecto entregado como referencia.
+**Angular 21.2.24**, **RxJS 7.8.2** y **TypeScript 5.9.3** implementan la experiencia de usuario. Se reutilizan los assets y la línea visual del proyecto frontend entregado, y la interfaz se adapta al laboratorio de Evals sin incorporar un segundo backend. En desarrollo se utiliza `ng serve` con proxy hacia FastAPI; en Docker se sirve el build estático mediante Nginx.
 
 **Pydantic** define requests, responses, tools, trazas y resultados de evaluación con validación explícita.
 

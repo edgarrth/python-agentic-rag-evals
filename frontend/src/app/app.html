@@ -1,0 +1,458 @@
+<a class="skip-link" href="#main-content">Saltar al contenido principal</a>
+
+<div class="app-shell" [class.sidebar-visible]="sidebarOpen()">
+  <button class="mobile-backdrop" type="button" aria-label="Cerrar navegación" (click)="sidebarOpen.set(false)"></button>
+
+  <aside class="sidebar" aria-label="Navegación principal">
+    <div class="brand">
+      <img src="assets/axiz-logo@2x.png" alt="Axiz" class="brand-logo">
+      <div class="brand-copy">
+        <strong>Payments Evals Lab</strong>
+        <span>Agentic RAG Quality Engineering</span>
+      </div>
+    </div>
+
+    <button class="button primary full" type="button" (click)="newConversation()" [disabled]="chatLoading()">
+      Nueva conversación
+    </button>
+
+    <nav class="nav-section" aria-label="Áreas de trabajo">
+      <span class="nav-label">Workspace</span>
+      <button class="nav-link" type="button" [class.active]="workspace() === 'chat'" (click)="switchWorkspace('chat')">
+        <span class="nav-code">CH</span>
+        <span><strong>Chat agentic</strong><small>Tools, RAG y trazas</small></span>
+      </button>
+      <button class="nav-link" type="button" [class.active]="workspace() === 'evals'" (click)="switchWorkspace('evals')">
+        <span class="nav-code">EV</span>
+        <span><strong>Evals</strong><small>Suites, métricas y gates</small></span>
+      </button>
+      <button class="nav-link" type="button" [class.active]="workspace() === 'runs'" (click)="switchWorkspace('runs')">
+        <span class="nav-code">RN</span>
+        <span><strong>Runs</strong><small>Historial y comparación</small></span>
+      </button>
+    </nav>
+
+    <section class="history-section" aria-labelledby="history-title">
+      <div class="nav-label-row">
+        <span class="nav-label" id="history-title">Conversaciones</span>
+        <span class="count-badge">{{ conversations().length }}</span>
+      </div>
+      <div class="conversation-history">
+        @for (group of conversationGroups(); track group.label) {
+          <div class="history-group">{{ group.label }}</div>
+          @for (conversation of group.conversations; track conversation.id) {
+            <button
+              type="button"
+              class="conversation-row"
+              [class.active]="conversation.id === activeConversationId() && workspace() === 'chat'"
+              (click)="openConversation(conversation.id)"
+              [disabled]="chatLoading()"
+              [attr.aria-current]="conversation.id === activeConversationId() ? 'page' : null"
+            >
+              <span class="conversation-title">{{ conversation.title }}</span>
+              <span
+                class="conversation-remove"
+                role="button"
+                tabindex="0"
+                aria-label="Eliminar conversación"
+                (click)="deleteConversation($event, conversation.id)"
+                (keydown.enter)="deleteConversation($event, conversation.id)"
+              >×</span>
+            </button>
+          }
+        }
+      </div>
+    </section>
+
+    <div class="sidebar-footer">
+      <div class="status-row">
+        <span class="status-dot" [class.online]="apiStatus() === 'online'" [class.offline]="apiStatus() === 'offline'"></span>
+        <span>{{ apiStatus() === 'online' ? 'Backend disponible' : apiStatus() === 'offline' ? 'Backend no disponible' : 'Verificando backend' }}</span>
+      </div>
+      @if (apiVersion()) { <small>API {{ apiVersion() }}</small> }
+    </div>
+  </aside>
+
+  <main class="main" id="main-content">
+    <header class="topbar">
+      <button class="icon-button menu-button" type="button" aria-label="Abrir navegación" (click)="toggleSidebar()">Menu</button>
+      <div class="topbar-copy">
+        <h1>{{ pageTitle() }}</h1>
+        <p>
+          @if (workspace() === 'chat') { Agente acotado al dominio de payment processing con ejecución observable. }
+          @if (workspace() === 'evals') { Evaluación reproducible de RAG, agente, routing, seguridad, conversación, performance y regresión. }
+          @if (workspace() === 'runs') { Comparación de ejecuciones versionadas y detección de degradaciones. }
+        </p>
+      </div>
+      <div class="topbar-actions">
+        <button class="status-chip" type="button" (click)="checkHealth()" [attr.aria-label]="'Estado API: ' + apiStatus()">
+          <span class="status-dot" [class.online]="apiStatus() === 'online'" [class.offline]="apiStatus() === 'offline'"></span>
+          {{ apiStatus() === 'online' ? 'Online' : apiStatus() === 'offline' ? 'Offline' : 'Checking' }}
+        </button>
+      </div>
+    </header>
+
+    @if (errorMessage()) {
+      <div class="alert error-alert" role="alert">
+        <div><strong>No se pudo completar la operación.</strong><span>{{ errorMessage() }}</span></div>
+        <button type="button" class="text-button" (click)="errorMessage.set('')">Cerrar</button>
+      </div>
+    }
+    @if (notice()) {
+      <div class="alert info-alert" role="status" aria-live="polite">
+        <span>{{ notice() }}</span>
+        <button type="button" class="text-button" (click)="notice.set('')">Cerrar</button>
+      </div>
+    }
+
+    @if (workspace() === 'chat') {
+      <section class="chat-layout">
+        <div class="chat-column">
+          <div class="chat-scroll" #chatScroll (scroll)="onChatScroll()">
+            @if (messages().length === 0) {
+              <div class="welcome">
+                <img src="assets/axiz-agent-icon.png" alt="" class="agent-mark">
+                <span class="eyebrow">Payments Agentic RAG</span>
+                <h2>Analiza pagos con una ejecución trazable</h2>
+                <p>La consulta puede activar routing, herramientas de dominio, recuperación de conocimiento y generación de un borrador no destructivo. Cada decisión observable queda disponible para evaluación.</p>
+                <div class="example-grid" aria-label="Consultas sugeridas">
+                  @for (example of examples; track example) {
+                    <button type="button" class="example-card" (click)="useExample(example)">{{ example }}</button>
+                  }
+                </div>
+              </div>
+            } @else {
+              <div class="message-list" aria-live="polite" aria-relevant="additions text">
+                @for (message of messages(); track message.id) {
+                  <article class="message" [class.user]="message.role === 'user'" [class.assistant]="message.role === 'assistant'">
+                    @if (message.role === 'assistant') {
+                      <img src="assets/axiz-agent-icon.png" alt="" class="message-avatar">
+                    }
+                    <div class="message-body">
+                      <div class="message-meta">
+                        <strong>{{ message.role === 'user' ? 'Consulta' : 'Payments Agent' }}</strong>
+                        <time>{{ formatDate(message.createdAt) }}</time>
+                      </div>
+
+                      @if (message.role === 'assistant' && (message.steps?.length || message.streaming)) {
+                        <details class="execution" [open]="message.streaming">
+                          <summary>
+                            <span class="live-indicator" [class.done]="!message.streaming"></span>
+                            {{ message.streaming ? 'Ejecución en curso' : 'Ejecución observable' }}
+                          </summary>
+                          <div class="step-list">
+                            @for (step of message.steps || []; track step.id) {
+                              <div class="step" [class.active]="step.status === 'active'" [class.error]="step.status === 'error'">
+                                <span class="step-state">{{ step.status === 'done' ? 'OK' : step.status === 'error' ? 'ERR' : '...' }}</span>
+                                <div><strong>{{ step.label }}</strong>@if (step.detail) { <small>{{ step.detail }}</small> }</div>
+                              </div>
+                            }
+                          </div>
+                        </details>
+                      }
+
+                      @if (message.streaming && !message.content) {
+                        <div class="stream-placeholder" role="status"><span></span><span></span><span></span> Procesando la tarea…</div>
+                      } @else {
+                        <div class="message-content">{{ message.content }}</div>
+                      }
+
+                      @if (message.error) {
+                        <div class="inline-error">{{ message.error }}</div>
+                      }
+
+                      @if (message.response; as response) {
+                        <div class="result-summary">
+                          <span><strong>Intent</strong>{{ response.intent }}</span>
+                          <span><strong>Estrategia</strong>{{ response.selected_strategy }}</span>
+                          <span><strong>Tools</strong>{{ response.tools.length }}</span>
+                          <span><strong>Latencia</strong>{{ formatMs(response.timings_ms['total']) }}</span>
+                        </div>
+                        <div class="message-actions">
+                          <button type="button" class="text-button" (click)="copyText(response.answer)">Copiar respuesta</button>
+                          <button type="button" class="text-button" (click)="inspectTrace(response.trace_id)" [disabled]="traceLoading()">Ver traza completa</button>
+                        </div>
+
+                        @if (response.tools.length) {
+                          <details class="detail-block">
+                            <summary>Tools ejecutadas ({{ response.tools.length }})</summary>
+                            <div class="tool-list">
+                              @for (tool of response.tools; track $index) {
+                                <div class="tool-card" [class.failed]="!!tool.error">
+                                  <div class="tool-head"><strong>{{ tool.tool }}</strong><span>{{ formatMs(tool.latency_ms) }}</span></div>
+                                  <div class="tool-status">Schema {{ tool.schema_valid ? 'válido' : 'inválido' }} · {{ tool.error ? 'con error' : 'ejecución correcta' }}</div>
+                                  <pre>{{ tool.arguments | json }}</pre>
+                                </div>
+                              }
+                            </div>
+                          </details>
+                        }
+
+                        @if (response.contexts.length) {
+                          <details class="detail-block">
+                            <summary>Evidencia recuperada ({{ response.contexts.length }})</summary>
+                            <div class="evidence-list">
+                              @for (context of response.contexts; track context.id) {
+                                <article class="evidence-card">
+                                  <div class="evidence-head"><strong>{{ context.source }}</strong><span>score {{ context.score | number:'1.3-3' }}</span></div>
+                                  <p>{{ context.text }}</p>
+                                  @if (context.entities.length) {
+                                    <div class="tag-row">@for (entity of context.entities; track entity) { <span>{{ entity }}</span> }</div>
+                                  }
+                                </article>
+                              }
+                            </div>
+                          </details>
+                        }
+                      }
+                    </div>
+                  </article>
+                }
+              </div>
+            }
+          </div>
+
+          @if (showJumpToLatest()) {
+            <button class="jump-latest" type="button" (click)="scrollToLatest(true)">Ir al último mensaje</button>
+          }
+
+          <div class="composer-shell">
+            <details class="mobile-settings">
+              <summary>Configuración de ejecución</summary>
+              <div class="mobile-settings-grid">
+                <label for="strategy-mobile">Estrategia RAG</label>
+                <select id="strategy-mobile" [(ngModel)]="strategy" [disabled]="chatLoading()">
+                  @for (item of strategies; track item.value) { <option [ngValue]="item.value">{{ item.label }}</option> }
+                </select>
+                <label for="top-k-mobile">Top K: {{ topK }}</label>
+                <input id="top-k-mobile" type="range" min="1" max="10" step="1" [(ngModel)]="topK" [disabled]="chatLoading()">
+                <label class="check-row"><input type="checkbox" [(ngModel)]="includeCaseDraft" [disabled]="chatLoading()"><span>Permitir borrador de caso</span></label>
+              </div>
+            </details>
+            <label for="chat-composer" class="sr-only">Consulta de payment processing</label>
+            <div class="composer" [class.busy]="chatLoading()">
+              <textarea
+                id="chat-composer"
+                [(ngModel)]="question"
+                (keydown)="onComposerKeydown($event)"
+                rows="2"
+                maxlength="4000"
+                placeholder="Describe una transacción, código de autorización o consulta de payment processing…"
+                [disabled]="chatLoading()"
+              ></textarea>
+              @if (chatLoading()) {
+                <button class="button danger" type="button" (click)="stopChat()">Detener</button>
+              } @else {
+                <button class="button primary" type="button" (click)="send()" [disabled]="!question.trim()">Enviar</button>
+              }
+            </div>
+            <div class="composer-footer"><span>Enter para enviar · Shift+Enter para nueva línea</span><span>{{ question.length }}/4000</span></div>
+          </div>
+        </div>
+
+        <aside class="inspector" aria-label="Configuración del agente">
+          <div class="panel-card">
+            <span class="panel-kicker">Ejecución</span>
+            <h3>Configuración</h3>
+            <label for="strategy">Estrategia RAG</label>
+            <select id="strategy" [(ngModel)]="strategy" [disabled]="chatLoading()">
+              @for (item of strategies; track item.value) { <option [ngValue]="item.value">{{ item.label }}</option> }
+            </select>
+
+            <label for="top-k">Top K <span>{{ topK }}</span></label>
+            <input id="top-k" type="range" min="1" max="10" step="1" [(ngModel)]="topK" [disabled]="chatLoading()">
+
+            <label class="check-row"><input type="checkbox" [(ngModel)]="includeCaseDraft" [disabled]="chatLoading()"><span>Permitir borrador de caso</span></label>
+            <p class="help">Las acciones sensibles se mantienen no destructivas. El borrador no se envía a sistemas externos.</p>
+          </div>
+
+          <div class="panel-card">
+            <span class="panel-kicker">Autonomía acotada</span>
+            <h3>Ciclo observable</h3>
+            <ol class="compact-flow">
+              <li>Interpretar objetivo</li>
+              <li>Resolver routing</li>
+              <li>Ejecutar tools</li>
+              <li>Recuperar evidencia</li>
+              <li>Sintetizar resultado</li>
+            </ol>
+            <p class="help">La interfaz presenta eventos observables del workflow; no se muestran cadenas privadas de razonamiento.</p>
+          </div>
+
+          @if (messages().length) {
+            <button class="button secondary full" type="button" (click)="retryLastQuestion()" [disabled]="chatLoading()">Repetir última consulta</button>
+          }
+        </aside>
+      </section>
+    }
+
+    @if (workspace() === 'evals') {
+      <section class="workspace eval-workspace">
+        <div class="workspace-header">
+          <div><span class="eyebrow">Quality engineering</span><h2>Ejecutar suite de evaluación</h2><p>Se utiliza un Golden Dataset común para separar fallos de retrieval, generación, agentic behavior, routing, seguridad y regresión.</p></div>
+        </div>
+
+        <div class="run-config card-surface">
+          <div class="field"><label for="suite">Suite</label><select id="suite" [(ngModel)]="selectedSuite" [disabled]="evalLoading()">@for (entry of objectKeys(suiteCatalog()); track entry) { <option [value]="entry">{{ entry }}</option> }</select></div>
+          <div class="field"><label for="eval-strategy">Estrategia</label><select id="eval-strategy" [(ngModel)]="evalStrategy" [disabled]="evalLoading()">@for (item of strategies; track item.value) { <option [ngValue]="item.value">{{ item.label }}</option> }</select></div>
+          <div class="field"><label for="prompt-version">Prompt version</label><input id="prompt-version" [(ngModel)]="promptVersion" [disabled]="evalLoading()"></div>
+          <div class="field"><label for="model-name">Modelo</label><input id="model-name" [(ngModel)]="modelName" [disabled]="evalLoading()"></div>
+          <label class="check-row external-judge"><input type="checkbox" [(ngModel)]="includeExternalJudges" [disabled]="evalLoading()"><span>DeepEval / RAGAS externos</span></label>
+          @if (evalLoading()) {
+            <button class="button danger" type="button" (click)="stopRunMonitoring()">Detener seguimiento</button>
+          } @else {
+            <button class="button primary" type="button" (click)="runEvaluation()">Ejecutar suite</button>
+          }
+        </div>
+
+        @if (evalLoading() || currentRun()) {
+          <div class="run-status card-surface" role="status" aria-live="polite">
+            <div class="run-status-head">
+              <div><strong>{{ currentRun()?.run_id || 'Preparando ejecución' }}</strong><span>{{ evalFamily() || statusLabel(currentRun()?.status || 'queued') }}</span></div>
+              <span class="status-badge" [class.pass]="currentRun()?.gates_passed === true" [class.fail]="currentRun()?.gates_passed === false">{{ currentRun()?.gates_passed === true ? 'Gates PASS' : currentRun()?.gates_passed === false ? 'Gates FAIL' : statusLabel(currentRun()?.status || 'running') }}</span>
+            </div>
+            <div class="progress-track" [attr.aria-valuenow]="Math.round((evalLoading() ? evalProgress() : currentRun()?.progress || 0) * 100)" aria-valuemin="0" aria-valuemax="100" role="progressbar">
+              <span [style.width.%]="Math.round((evalLoading() ? evalProgress() : currentRun()?.progress || 0) * 100)"></span>
+            </div>
+          </div>
+        }
+
+        @if (currentRun(); as run) {
+          <div class="kpi-grid">
+            <div class="kpi"><span>Quality score</span><strong>{{ scoreText(runStats().score) }}</strong><small>Promedio de métricas con score</small></div>
+            <div class="kpi"><span>Pass rate</span><strong>{{ scoreText(runStats().passRate) }}</strong><small>{{ runStats().passed }} pass · {{ runStats().failed }} fail</small></div>
+            <div class="kpi"><span>Cobertura</span><strong>{{ runStats().total }}</strong><small>Métricas ejecutadas</small></div>
+            <div class="kpi"><span>Quality gates</span><strong [class.text-success]="run.gates_passed === true" [class.text-danger]="run.gates_passed === false">{{ run.gates_passed === true ? 'PASS' : run.gates_passed === false ? 'FAIL' : 'Pendiente' }}</strong><small>{{ run.gate_failures.length }} bloqueos</small></div>
+          </div>
+
+          <div class="eval-tabs" role="tablist" aria-label="Dimensiones de evaluación">
+            @for (tab of evalTabs; track tab.id) {
+              <button type="button" role="tab" class="eval-tab" [class.active]="evalView() === tab.id" [attr.aria-selected]="evalView() === tab.id" (click)="setEvalView(tab.id)">{{ tab.label }}</button>
+            }
+          </div>
+
+          @if (evalView() === 'overview') {
+            <div class="dimension-grid">
+              @for (dimension of dimensionCards(); track dimension.dimension) {
+                <article class="dimension-card">
+                  <div class="dimension-head"><strong>{{ dimension.label }}</strong><span>{{ dimension.total }} métricas</span></div>
+                  <div class="dimension-score">{{ scoreText(dimension.score) }}</div>
+                  <div class="metric-bar"><span [style.width.%]="dimension.score * 100"></span></div>
+                  <div class="dimension-foot"><span>{{ dimension.passed }} pass</span><span>{{ dimension.failed }} fail</span></div>
+                </article>
+              }
+            </div>
+            @if (run.gate_failures.length) {
+              <div class="gate-failures card-surface">
+                <h3>Quality gates bloqueados</h3>
+                <ul>@for (failure of run.gate_failures; track failure) { <li>{{ failure }}</li> }</ul>
+              </div>
+            }
+          } @else {
+            <div class="metric-toolbar">
+              <label class="search-field"><span class="sr-only">Buscar métricas</span><input [(ngModel)]="metricSearch" placeholder="Buscar métrica, dimensión, framework o caso"></label>
+              <label class="field compact"><span class="sr-only">Estado</span><select [(ngModel)]="metricStatus"><option value="all">Todos los estados</option><option value="passed">Pass</option><option value="failed">Fail</option><option value="info">Informativo</option></select></label>
+              <span class="result-count">{{ visibleMetrics().length }} resultados</span>
+            </div>
+
+            <div class="metric-table-wrap">
+              <table class="metric-table">
+                <thead><tr><th>Métrica</th><th>Dimensión</th><th>Score</th><th>Threshold</th><th>Estado</th><th>Framework</th><th>Caso</th><th>Detalle</th></tr></thead>
+                <tbody>
+                  @for (metric of visibleMetrics(); track $index) {
+                    <tr>
+                      <td><strong>{{ humanize(metric.metric) }}</strong><div class="score-line"><span [style.width.%]="scorePercent(metric)"></span></div></td>
+                      <td>{{ humanize(metric.dimension) }}</td>
+                      <td class="mono">{{ scoreText(metric.score) }}</td>
+                      <td class="mono">{{ scoreText(metric.threshold) }}</td>
+                      <td><span class="status-badge" [class.pass]="metric.passed === true" [class.fail]="metric.passed === false">{{ passLabel(metric.passed) }}</span></td>
+                      <td>{{ metric.framework }}</td>
+                      <td class="mono">{{ metric.case_id || '—' }}</td>
+                      <td>
+                        @if (metric.reason || objectKeys(metric.details).length) {
+                          <details class="row-details"><summary>Ver</summary>@if (metric.reason) { <p>{{ metric.reason }}</p> }<pre>{{ metric.details | json }}</pre></details>
+                        } @else { — }
+                      </td>
+                    </tr>
+                  } @empty {
+                    <tr><td colspan="8"><div class="table-empty">No hay métricas que coincidan con los filtros.</div></td></tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        } @else {
+          <div class="empty-workspace card-surface">
+            <strong>Aún no se ha ejecutado una suite</strong>
+            <p>Se recomienda iniciar con <code>smoke</code> para validar el flujo o con <code>full</code> para cubrir todas las familias disponibles.</p>
+          </div>
+        }
+      </section>
+    }
+
+    @if (workspace() === 'runs') {
+      <section class="workspace runs-workspace">
+        <div class="workspace-header split">
+          <div><span class="eyebrow">Regression workflow</span><h2>Historial de runs</h2><p>Selecciona entre dos y cuatro ejecuciones para comparar métricas homónimas.</p></div>
+          <div class="workspace-actions"><button class="button secondary" type="button" (click)="refreshRuns()">Actualizar</button><button class="button primary" type="button" (click)="compareRuns()" [disabled]="compareSelection().length < 2 || comparisonLoading()">Comparar ({{ compareSelection().length }})</button></div>
+        </div>
+
+        <div class="metric-table-wrap">
+          <table class="metric-table runs-table">
+            <thead><tr><th>Comparar</th><th>Run</th><th>Suite</th><th>Inicio</th><th>Estado</th><th>Gates</th><th>Métricas</th><th></th></tr></thead>
+            <tbody>
+              @for (run of runs(); track run.run_id) {
+                <tr>
+                  <td><input type="checkbox" [checked]="isRunSelected(run.run_id)" [disabled]="compareSelection().length >= 4 && !isRunSelected(run.run_id)" (change)="toggleRunSelection(run.run_id, $any($event.target).checked)" [attr.aria-label]="'Seleccionar run ' + run.run_id"></td>
+                  <td class="mono"><strong>{{ run.run_id.slice(0, 8) }}</strong></td>
+                  <td>{{ run.suite }}</td>
+                  <td>{{ formatDate(run.started_at) }}</td>
+                  <td><span class="status-badge" [class.pass]="run.status === 'completed'" [class.fail]="run.status === 'failed'">{{ statusLabel(run.status) }}</span></td>
+                  <td><span class="status-badge" [class.pass]="run.gates_passed === true" [class.fail]="run.gates_passed === false">{{ run.gates_passed === true ? 'PASS' : run.gates_passed === false ? 'FAIL' : '—' }}</span></td>
+                  <td>{{ run.metrics.length }}</td>
+                  <td><button class="text-button" type="button" (click)="openRun(run.run_id)">Abrir</button></td>
+                </tr>
+              } @empty {
+                <tr><td colspan="8"><div class="table-empty">No hay runs disponibles todavía.</div></td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        @if (comparison(); as result) {
+          <div class="comparison card-surface">
+            <div class="section-heading"><div><span class="eyebrow">Baseline vs candidate</span><h3>Comparación normalizada</h3></div></div>
+            <div class="metric-table-wrap">
+              <table class="metric-table comparison-table">
+                <thead><tr><th>Métrica</th>@for (runId of result.runs; track runId) { <th class="mono">{{ runId.slice(0, 8) }}</th> }</tr></thead>
+                <tbody>
+                  @for (row of result.comparison; track row['metric']) {
+                    <tr><td><strong>{{ humanize($any(row['metric'])) }}</strong></td>@for (runId of result.runs; track runId) { <td class="mono">{{ row[runId] === null ? '—' : scoreText($any(row[runId])) }}</td> }</tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+        }
+      </section>
+    }
+  </main>
+</div>
+
+@if (selectedTrace(); as trace) {
+  <div class="drawer-backdrop" (click)="closeTrace()"></div>
+  <aside class="trace-drawer" aria-label="Traza de ejecución" role="dialog" aria-modal="true">
+    <div class="drawer-head"><div><span class="eyebrow">Trace</span><h2>Detalle de ejecución</h2></div><button class="icon-button" type="button" aria-label="Cerrar traza" (click)="closeTrace()">Cerrar</button></div>
+    <div class="trace-summary">
+      <span><strong>Trace ID</strong><code>{{ trace.trace_id }}</code></span>
+      <span><strong>Intent</strong>{{ trace.intent || '—' }}</span>
+      <span><strong>Route</strong>{{ trace.route || '—' }}</span>
+      <span><strong>Session</strong><code>{{ trace.session_id || '—' }}</code></span>
+    </div>
+
+    <section class="drawer-section"><h3>Eventos</h3><div class="timeline">@for (event of trace.events; track $index) { <div class="timeline-row"><span></span><div><strong>{{ event.label }}</strong><small>{{ humanize(event.stage) }} · {{ formatDate(event.timestamp) }}</small>@if (event.detail) { <p>{{ event.detail }}</p> }</div></div> }</div></section>
+    <section class="drawer-section"><h3>Tools</h3>@if (trace.tool_calls.length) { <div class="tool-list">@for (tool of trace.tool_calls; track $index) { <div class="tool-card"><div class="tool-head"><strong>{{ tool.tool }}</strong><span>{{ formatMs(tool.latency_ms) }}</span></div><pre>{{ tool.arguments | json }}</pre></div> }</div> } @else { <p class="muted">No se ejecutaron tools.</p> }</section>
+    <section class="drawer-section"><h3>Retrieval</h3><pre>{{ trace.retrieval | json }}</pre></section>
+    <section class="drawer-section"><h3>Uso</h3><pre>{{ trace.usage | json }}</pre></section>
+  </aside>
+}

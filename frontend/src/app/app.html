@@ -154,7 +154,11 @@
                       @if (message.streaming && !message.content) {
                         <div class="stream-placeholder" role="status"><span></span><span></span><span></span> Procesando la tarea…</div>
                       } @else {
-                        <div class="message-content">{{ message.content }}</div>
+                        @if (message.role === 'assistant') {
+                          <div class="message-content markdown-content" [innerHTML]="message.content | markdown"></div>
+                        } @else {
+                          <div class="message-content user-content">{{ message.content }}</div>
+                        }
                       }
 
                       @if (message.error) {

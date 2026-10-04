@@ -11,6 +11,7 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from './services/api.service';
+import { MarkdownPipe } from './markdown.pipe';
 import {
   ChatMessage,
   ChatResponse,
@@ -61,7 +62,7 @@ interface MetricDimensionGroupView {
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, MarkdownPipe],
   templateUrl: './app.html',
   styleUrl: './app.css',
   changeDetection: ChangeDetectionStrategy.OnPush

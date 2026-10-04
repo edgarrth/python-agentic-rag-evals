@@ -802,3 +802,64 @@ input:disabled { opacity: .58; cursor: not-allowed; }
 .subtle-action { min-height: 32px; padding: 6px 11px; font-size: 9px; opacity: .92; }
 .support-eval-panel:hover { border-color: #285169; }
 @media (max-width: 760px) { .support-eval-panel { align-items: stretch; flex-direction: column; } .support-eval-action .button { width: 100%; } }
+
+/* Markdown seguro para las respuestas del agente. */
+.markdown-content {
+  color: #cedde4;
+  font-size: 12px;
+  line-height: 1.72;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.markdown-content :where(h1, h2, h3, h4, h5, h6) {
+  margin: 1.15em 0 .48em;
+  color: #f2f8fb;
+  line-height: 1.28;
+  letter-spacing: -.01em;
+}
+.markdown-content h1 { font-size: 1.42rem; }
+.markdown-content h2 { font-size: 1.18rem; }
+.markdown-content h3 { font-size: 1rem; }
+.markdown-content :where(h4, h5, h6) { font-size: .88rem; }
+.markdown-content :where(p, ul, ol, blockquote, pre, .markdown-table-wrap) { margin: .65em 0; }
+.markdown-content > :first-child { margin-top: 0; }
+.markdown-content > :last-child { margin-bottom: 0; }
+.markdown-content :where(ul, ol) { padding-left: 1.45rem; }
+.markdown-content li { margin: .24em 0; padding-left: .12rem; }
+.markdown-content strong { color: #edf8fc; font-weight: 700; }
+.markdown-content em { color: #d8e9ef; }
+.markdown-content a { color: #55d6ff; text-decoration: underline; text-underline-offset: 2px; }
+.markdown-content a:hover { color: #8be4ff; }
+.markdown-content code {
+  border: 1px solid #244b5e;
+  border-radius: 5px;
+  background: #07151d;
+  color: #93e9ff;
+  padding: .08rem .32rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: .92em;
+}
+.markdown-content pre {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid #1c4051;
+  border-radius: 9px;
+  background: #06131a;
+  padding: .8rem .9rem;
+}
+.markdown-content pre code { border: 0; background: transparent; padding: 0; color: #caeaf2; }
+.markdown-content blockquote {
+  border-left: 3px solid #31b9e6;
+  background: rgba(49, 185, 230, .06);
+  color: #bad6df;
+  padding: .55rem .75rem;
+  border-radius: 0 7px 7px 0;
+}
+.markdown-content hr { border: 0; border-top: 1px solid #1b3b4a; margin: 1rem 0; }
+.markdown-table-wrap { max-width: 100%; overflow-x: auto; border: 1px solid #1a3d4d; border-radius: 8px; }
+.markdown-content table { width: 100%; border-collapse: collapse; min-width: 420px; }
+.markdown-content th,
+.markdown-content td { border-bottom: 1px solid #173746; padding: .5rem .65rem; text-align: left; vertical-align: top; }
+.markdown-content th { color: #86cce5; background: #0a1c25; font-size: .9em; }
+.markdown-content tr:last-child td { border-bottom: 0; }
+.user-content { white-space: pre-wrap; }

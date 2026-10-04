@@ -123,7 +123,7 @@ La instrumentación forma parte del diseño. La traza contiene eventos observabl
 
 ## Experiencia de usuario del frontend
 
-El frontend se reorganiza alrededor de tres áreas: **Chat agentic**, **Evals** y **Runs**. Se evita exponer complejidad técnica en la respuesta principal; routing, tools, retrieval y detalles de evaluación se muestran en paneles progresivos y trazas bajo demanda.
+El frontend se reorganiza alrededor de tres áreas: **Chat agentic**, **Evals** y **Runs**. Se evita exponer complejidad técnica en la respuesta principal; routing, tools, retrieval y detalles de evaluación se muestran en paneles progresivos y trazas bajo demanda. Las respuestas del agente se renderizan como Markdown seguro en el chat para presentar encabezados, énfasis, listas, bloques de código, citas, enlaces y tablas sin mostrar la sintaxis Markdown al usuario.
 
 Se aplican las siguientes prácticas de experiencia de usuario:
 

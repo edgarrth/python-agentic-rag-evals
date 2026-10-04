@@ -35,3 +35,25 @@ async def test_transaction_diagnosis_is_observable_and_non_destructive() -> None
     serialized = trace.model_dump(mode="json")
     assert "chain_of_thought" not in serialized
     assert "reasoning" not in serialized
+
+
+@pytest.mark.asyncio
+async def test_plural_transaction_queries_use_domain_tools() -> None:
+    settings = Settings(datasets_dir=Path("datasets"))
+    repo = PaymentRepository(settings.datasets_dir)
+    rag = RagService(settings)
+    tools = build_tool_registry(repo, rag)
+    traces = TraceStore()
+    controller = AgenticController(AdaptiveRouter(), tools, rag, traces, SessionStore())
+
+    catalog = await controller.run(ChatRequest(question="¿Qué tipos de transacciones existen?", strategy="auto"))
+    assert catalog.intent == "transaction_catalog"
+    assert "aprobadas" in catalog.answer.lower()
+    assert any(call.tool == "summarize_transactions" for call in catalog.tools)
+
+    declined = await controller.run(ChatRequest(question="Dime las transacciones rechazadas", strategy="auto"))
+    assert declined.intent == "transaction_search"
+    assert "TX-1007" in declined.answer
+    assert "TX-1009" in declined.answer
+    list_calls = [call for call in declined.tools if call.tool == "list_transactions"]
+    assert list_calls and list_calls[0].arguments["status"] == "declined"

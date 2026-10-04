@@ -17,6 +17,15 @@ class AuthorizationCodeArgs(BaseModel):
     code: str = Field(min_length=2, max_length=3)
 
 
+class ListTransactionsArgs(BaseModel):
+    status: Literal["approved", "declined", "pending", "reversed"] | None = None
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class TransactionSummaryArgs(BaseModel):
+    pass
+
+
 class SearchKnowledgeArgs(BaseModel):
     query: str = Field(min_length=3, max_length=1000)
     strategy: Literal["native", "hybrid", "graphrag", "raglight", "lightrag"] = "hybrid"
@@ -52,6 +61,17 @@ class PaymentTools:
             return {"found": False, "code": code}
         return {"found": True, **item.model_dump(mode="json")}
 
+    def list_transactions(self, status: str | None, limit: int) -> dict:
+        items = self.repository.list_transactions(status=status, limit=limit)
+        return {
+            "count": len(items),
+            "status": status,
+            "transactions": [item.model_dump(mode="json") for item in items],
+        }
+
+    def summarize_transactions(self) -> dict:
+        return self.repository.transaction_summary()
+
     async def search_payment_knowledge(self, query: str, strategy: str, top_k: int) -> dict:
         contexts = await self.rag_service.retrieve(query=query, strategy=strategy, top_k=top_k)
         return {"contexts": [item.model_dump(mode="json") for item in contexts]}
@@ -75,6 +95,8 @@ def build_tool_registry(repository: PaymentRepository, rag_service: RagService) 
     registry = ToolRegistry()
     registry.register(ToolDefinition("get_transaction", "Recupera una transacción sintética", GetTransactionArgs, tools.get_transaction))
     registry.register(ToolDefinition("lookup_authorization_code", "Interpreta un código de autorización", AuthorizationCodeArgs, tools.lookup_authorization_code))
+    registry.register(ToolDefinition("list_transactions", "Lista transacciones sintéticas con filtro opcional por estado", ListTransactionsArgs, tools.list_transactions))
+    registry.register(ToolDefinition("summarize_transactions", "Resume los estados y características disponibles en el dataset de transacciones", TransactionSummaryArgs, tools.summarize_transactions))
     registry.register(ToolDefinition("search_payment_knowledge", "Consulta el corpus de pagos", SearchKnowledgeArgs, tools.search_payment_knowledge))
     registry.register(ToolDefinition("search_payment_relationships", "Consulta relaciones del grafo", SearchRelationshipsArgs, tools.search_payment_relationships))
     registry.register(ToolDefinition("create_case_draft", "Genera un borrador no destructivo", CreateCaseDraftArgs, tools.create_case_draft))

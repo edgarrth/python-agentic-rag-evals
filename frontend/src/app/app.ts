@@ -36,6 +36,28 @@ interface EvalTab {
   description: string;
 }
 
+interface MetricGroupView {
+  metric: string;
+  dimension: string;
+  score: number | null;
+  threshold: number | null;
+  passed: number;
+  failed: number;
+  info: number;
+  total: number;
+  frameworks: string[];
+  rows: MetricResult[];
+}
+
+interface MetricDimensionGroupView {
+  dimension: string;
+  label: string;
+  score: number | null;
+  failed: number;
+  total: number;
+  groups: MetricGroupView[];
+}
+
 @Component({
   selector: 'app-root',
   standalone: true,
@@ -131,6 +153,7 @@ export class AppComponent implements OnInit {
   evalView = signal<EvalView>('overview');
   metricSearch = '';
   metricStatus: 'all' | 'passed' | 'failed' | 'info' = 'all';
+  ragMetricView: 'essential' | 'complete' = 'essential';
   compareSelection = signal<string[]>([]);
   comparison = signal<ComparisonResponse | null>(null);
   comparisonLoading = signal(false);
@@ -139,6 +162,7 @@ export class AppComponent implements OnInit {
   benchmarkProgress = signal(0);
   benchmarkRuns = signal<EvalRunSummary[]>([]);
   benchmarkComparison = signal<ComparisonResponse | null>(null);
+  expandedResultPanel = signal<'individual' | 'benchmark' | null>(null);
 
   selectedTrace = signal<ExecutionTrace | null>(null);
   traceLoading = signal(false);
@@ -231,6 +255,50 @@ export class AppComponent implements OnInit {
     return help[field] || '';
   }
 
+  chatConfigHelp(field: string): string {
+    const help: Record<string, string> = {
+      strategy: 'Define cómo se recupera evidencia para responder. Adaptive Routing selecciona la estrategia automáticamente; las demás opciones fuerzan una técnica RAG concreta.',
+      provider: 'Motor que genera la respuesta del chat. OpenAI Responses API usa el modelo seleccionado y requiere OPENAI_API_KEY. Determinista no invoca un LLM externo.',
+      model: 'Modelo que genera la respuesta cuando el motor es OpenAI. Los modelos Mini priorizan costo y velocidad; los normales permiten comparar mayor capacidad.',
+      prompt: 'Versión de prompt es el identificador versionado de las instrucciones del sistema usadas para guiar al agente. Permite comparar cambios de prompt sin alterar el resto de la configuración.',
+      topK: 'Número máximo de fragmentos recuperados que se entregan al agente. Un valor mayor puede mejorar recall, pero también añadir ruido, latencia y tokens.',
+      draft: 'Permite crear únicamente un borrador no destructivo de caso cuando la política de pagos lo requiere. No se envía a sistemas externos.',
+      runtime: 'Resume el motor, modelo, prompt y embeddings que realmente usa el chat. También indica si la clave de OpenAI fue detectada por el backend.'
+    };
+    return help[field] || '';
+  }
+
+  resultPanelOpen(panel: 'individual' | 'benchmark'): boolean {
+    return this.expandedResultPanel() === panel;
+  }
+
+  toggleResultPanel(panel: 'individual' | 'benchmark'): void {
+    this.expandedResultPanel.update((current) => current === panel ? null : panel);
+  }
+
+  private openResultPanel(panel: 'individual' | 'benchmark', elementId: string): void {
+    this.expandedResultPanel.set(panel);
+    setTimeout(() => document.getElementById(elementId)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+  }
+
+  individualResultSummary(): string {
+    const run = this.currentRun();
+    if (!run) return this.evalLoading() ? `${this.selectedSuite} · ${this.humanize(this.evalStrategy)} · ejecutando` : 'Sin ejecución';
+    const stats = this.calculateRunStats(run);
+    const model = String(run.request_config?.['model'] || 'deterministic');
+    const strategy = String(run.request_config?.['strategy'] || this.evalStrategy);
+    const pass = run.status !== 'completed' && !run.metrics.length
+      ? 'en ejecución'
+      : `${Math.round(stats.passRate * 100)}% pass`;
+    return `${run.suite} · ${this.humanize(strategy)} · ${model} · ${pass}`;
+  }
+
+  benchmarkResultSummary(): string {
+    if (this.benchmarkLoading()) return `${this.benchmarkSelection().length} estrategias · ejecutando ${Math.round(this.benchmarkProgress() * 100)}%`;
+    if (!this.benchmarkComparison()) return `${this.benchmarkSelection().length} estrategias seleccionadas · sin resultados`;
+    return `${this.benchmarkRuns().length} estrategias · ganador global ${this.benchmarkBestQuality()} · menor latencia ${this.benchmarkBestLatency()}`;
+  }
+
   tabDescription(tab: EvalTab): string {
     return tab.description;
   }
@@ -245,13 +313,21 @@ export class AppComponent implements OnInit {
 
   benchmarkMetricCatalog(): string[] {
     return [
-      'hit@1', 'precision@1', 'recall@1', 'ndcg@1',
-      'hit@3', 'precision@3', 'recall@3', 'ndcg@3',
       'hit@5', 'precision@5', 'recall@5', 'ndcg@5', 'mrr', 'rerank_ndcg_delta',
       'context_precision', 'context_recall', 'context_relevancy',
       'faithfulness', 'groundedness', 'answer_relevancy', 'correctness', 'hallucination',
       'semantic_similarity', 'truthfulness', 'coherence', 'avg_latency_ms', 'avg_tokens'
     ];
+  }
+
+  ragMetricViewHelp(): string {
+    return this.ragMetricView === 'essential'
+      ? 'Vista esencial: muestra las métricas RAG más útiles para comparar estrategias. Las métricas de retrieval se presentan en @5 para evitar repetir el mismo indicador en varios cortes.'
+      : 'Vista completa: muestra también los cortes @1 y @3. El sufijo @K significa que la métrica se calcula únicamente sobre los primeros K resultados recuperados.';
+  }
+
+  scrollToBenchmark(): void {
+    document.getElementById('rag-benchmark')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   async checkHealth(): Promise<void> {
@@ -550,6 +626,7 @@ export class AppComponent implements OnInit {
     this.evalLoading.set(true);
     this.evalProgress.set(0);
     this.evalFamily.set('Preparando suite');
+    this.openResultPanel('individual', 'individual-eval-result');
     this.errorMessage.set('');
     this.comparison.set(null);
     const controller = new AbortController();
@@ -625,6 +702,7 @@ export class AppComponent implements OnInit {
     if (!selected.length || this.benchmarkLoading()) return;
     this.benchmarkLoading.set(true);
     this.benchmarkProgress.set(0);
+    this.openResultPanel('benchmark', 'benchmark-result');
     this.benchmarkRuns.set([]);
     this.benchmarkComparison.set(null);
     this.errorMessage.set('');
@@ -804,6 +882,7 @@ export class AppComponent implements OnInit {
       this.currentRun.set(await this.api.run(runId));
       this.workspace.set('evals');
       this.evalView.set('overview');
+      this.openResultPanel('individual', 'individual-eval-result');
       this.sidebarOpen.set(false);
     } catch (error) {
       this.errorMessage.set(this.errorText(error));
@@ -814,6 +893,91 @@ export class AppComponent implements OnInit {
     this.evalView.set(view);
   }
 
+  metricGroups(): MetricGroupView[] {
+    const groups = new Map<string, MetricResult[]>();
+    for (const metric of this.visibleMetrics()) {
+      groups.set(metric.metric, [...(groups.get(metric.metric) || []), metric]);
+    }
+    return [...groups.entries()]
+      .map(([metric, rows]) => {
+        const scored = rows.filter((item) => item.score !== null);
+        const thresholds = rows.filter((item) => item.threshold !== null);
+        return {
+          metric,
+          dimension: rows[0]?.dimension || 'general',
+          score: scored.length ? scored.reduce((sum, item) => sum + (item.score || 0), 0) / scored.length : null,
+          threshold: thresholds.length ? thresholds.reduce((sum, item) => sum + (item.threshold || 0), 0) / thresholds.length : null,
+          passed: rows.filter((item) => item.passed === true).length,
+          failed: rows.filter((item) => item.passed === false).length,
+          info: rows.filter((item) => item.passed === null).length,
+          total: rows.length,
+          frameworks: [...new Set(rows.map((item) => item.framework).filter(Boolean))],
+          rows
+        };
+      })
+      .sort((a, b) => {
+        if (b.failed !== a.failed) return b.failed - a.failed;
+        const aScore = a.score ?? -1;
+        const bScore = b.score ?? -1;
+        if (aScore !== bScore) return aScore - bScore;
+        return this.humanize(a.metric).localeCompare(this.humanize(b.metric));
+      });
+  }
+
+  metricDimensionGroups(): MetricDimensionGroupView[] {
+    const grouped = new Map<string, MetricGroupView[]>();
+    for (const group of this.metricGroups()) {
+      grouped.set(group.dimension, [...(grouped.get(group.dimension) || []), group]);
+    }
+    return [...grouped.entries()].map(([dimension, groups]) => {
+      const scores = groups.map((group) => group.score).filter((value): value is number => value !== null);
+      return {
+        dimension,
+        label: this.humanize(dimension),
+        score: scores.length ? scores.reduce((sum, value) => sum + value, 0) / scores.length : null,
+        failed: groups.reduce((sum, group) => sum + group.failed, 0),
+        total: groups.reduce((sum, group) => sum + group.total, 0),
+        groups
+      };
+    }).sort((a, b) => {
+      if (b.failed !== a.failed) return b.failed - a.failed;
+      return a.label.localeCompare(b.label);
+    });
+  }
+
+  metricGroupTone(group: MetricGroupView): 'pass' | 'fail' | 'mixed' | 'info' {
+    if (group.failed && group.passed) return 'mixed';
+    if (group.failed) return 'fail';
+    if (group.passed) return 'pass';
+    return 'info';
+  }
+
+  metricGroupSummary(group: MetricGroupView): string {
+    const parts = [`${group.total} caso${group.total === 1 ? '' : 's'}`];
+    if (group.passed) parts.push(`${group.passed} pass`);
+    if (group.failed) parts.push(`${group.failed} fail`);
+    if (group.info) parts.push(`${group.info} info`);
+    return parts.join(' · ');
+  }
+
+  metricGroupScorePercent(group: MetricGroupView): number {
+    if (group.score === null || group.score === undefined) return 0;
+    return Math.max(0, Math.min(100, Math.round(group.score * 100)));
+  }
+
+  metricGroupThresholdText(group: MetricGroupView): string {
+    return group.threshold === null || group.threshold === undefined ? 'N/A' : this.scoreText(group.threshold);
+  }
+
+  metricGroupFrameworks(group: MetricGroupView): string {
+    return group.frameworks.length ? group.frameworks.join(' · ') : '—';
+  }
+
+  detailSummaryTitle(metric: MetricResult): string {
+    const target = metric.case_id ? ` del caso ${metric.case_id}` : '';
+    return `Abrir detalle técnico${target}: razón de evaluación y payload de soporte.`;
+  }
+
   visibleMetrics(): MetricResult[] {
     const run = this.currentRun();
     if (!run) return [];
@@ -821,6 +985,13 @@ export class AppComponent implements OnInit {
     let rows = run.metrics;
     if (this.evalView() !== 'overview' && this.evalView() !== 'all' && tab?.dimensions.length) {
       rows = rows.filter((metric) => tab.dimensions.includes(metric.dimension));
+    }
+    if (this.evalView() === 'rag' && this.ragMetricView === 'essential') {
+      const essentialRetrieval = new Set(['hit@5', 'precision@5', 'recall@5', 'ndcg@5', 'mrr', 'rerank_ndcg_delta']);
+      rows = rows.filter((metric) => {
+        if (metric.dimension !== 'retrieval') return true;
+        return essentialRetrieval.has(metric.metric);
+      });
     }
     const search = this.metricSearch.trim().toLocaleLowerCase();
     if (search) {

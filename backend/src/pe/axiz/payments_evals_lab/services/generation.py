@@ -41,7 +41,8 @@ class GenerationService:
         *,
         question: str,
         transaction: dict[str, Any] | None,
-        code_detail: dict[str, Any] | None,
+        transactions_evidence: dict[str, Any] | None = None,
+        code_detail: dict[str, Any] | None = None,
         contexts: list[RetrievedContext],
         draft: dict[str, Any] | None,
         provider: str,
@@ -53,13 +54,14 @@ class GenerationService:
             return await self._openai_generate(
                 question=question,
                 transaction=transaction,
+                transactions_evidence=transactions_evidence,
                 code_detail=code_detail,
                 contexts=contexts,
                 draft=draft,
                 model=(model if model and model != "deterministic" else self.settings.openai_model),
                 prompt_version=prompt_version,
             )
-        text = self._deterministic_answer(question, transaction, code_detail, contexts, draft)
+        text = self._deterministic_answer(question, transaction, transactions_evidence, code_detail, contexts, draft)
         return GenerationResult(
             text=text,
             provider="deterministic",
@@ -75,6 +77,7 @@ class GenerationService:
         *,
         question: str,
         transaction: dict[str, Any] | None,
+        transactions_evidence: dict[str, Any] | None,
         code_detail: dict[str, Any] | None,
         contexts: list[RetrievedContext],
         draft: dict[str, Any] | None,
@@ -88,6 +91,7 @@ class GenerationService:
         evidence = {
             "question": question,
             "transaction": transaction,
+            "transactions": transactions_evidence,
             "authorization_code": code_detail,
             "retrieval_contexts": [
                 {"source": ctx.source, "text": ctx.text, "score": ctx.score, "rank": ctx.rank}
@@ -158,6 +162,7 @@ class GenerationService:
     def _deterministic_answer(
         question: str,
         transaction: dict[str, Any] | None,
+        transactions_evidence: dict[str, Any] | None,
         code_detail: dict[str, Any] | None,
         contexts: list[RetrievedContext],
         draft: dict[str, Any] | None,
@@ -171,6 +176,29 @@ class GenerationService:
             )
         elif _TX.search(question):
             parts.append("No se encontró la transacción solicitada en el dataset controlado.")
+
+        if transactions_evidence:
+            if "supported_statuses" in transactions_evidence:
+                labels = {"approved": "aprobadas", "declined": "rechazadas", "pending": "pendientes", "reversed": "reversadas"}
+                present = transactions_evidence.get("present_statuses") or {}
+                present_text = ", ".join(f"{labels.get(key, key)} ({value})" for key, value in present.items())
+                supported = ", ".join(labels.get(item, item) for item in transactions_evidence.get("supported_statuses", []))
+                parts.append(
+                    f"En la PoC se soportan estados de transacción: {supported}. "
+                    f"En el dataset actual hay {transactions_evidence.get('total', 0)} transacciones: {present_text or 'sin registros'}."
+                )
+            elif "transactions" in transactions_evidence:
+                items = transactions_evidence.get("transactions") or []
+                status = transactions_evidence.get("status")
+                if not items:
+                    parts.append(f"No se encontraron transacciones{f' con estado {status}' if status else ''} en el dataset controlado.")
+                else:
+                    rows = "; ".join(
+                        f"{item['transaction_id']} ({item['status']}, {item['amount']:.2f} {item['currency']}, {item['card_network']})"
+                        for item in items[:10]
+                    )
+                    prefix = f"Se encontraron {len(items)} transacciones" + (f" con estado {status}" if status else "")
+                    parts.append(f"{prefix}: {rows}.")
 
         if code_detail and code_detail.get("found"):
             parts.append(

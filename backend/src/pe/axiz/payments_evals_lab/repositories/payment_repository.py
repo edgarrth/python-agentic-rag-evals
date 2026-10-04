@@ -38,3 +38,25 @@ class PaymentRepository:
 
     def all_transactions(self) -> list[Transaction]:
         return list(self._transactions.values())
+
+    def list_transactions(self, status: str | None = None, limit: int = 20) -> list[Transaction]:
+        items = sorted(self._transactions.values(), key=lambda item: item.created_at, reverse=True)
+        if status:
+            items = [item for item in items if item.status == status]
+        return items[:limit]
+
+    def transaction_summary(self) -> dict[str, object]:
+        counts = {status: 0 for status in ("approved", "declined", "pending", "reversed")}
+        currencies: set[str] = set()
+        networks: set[str] = set()
+        for transaction in self._transactions.values():
+            counts[transaction.status] = counts.get(transaction.status, 0) + 1
+            currencies.add(transaction.currency)
+            networks.add(transaction.card_network)
+        return {
+            "total": len(self._transactions),
+            "supported_statuses": ["approved", "declined", "pending", "reversed"],
+            "present_statuses": {key: value for key, value in counts.items() if value > 0},
+            "currencies": sorted(currencies),
+            "card_networks": sorted(networks),
+        }

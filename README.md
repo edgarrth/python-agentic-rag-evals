@@ -31,7 +31,7 @@ La PoC distingue de forma explícita el **motor del sistema bajo prueba (SUT)** 
 - **Judge determinista / reglas**: no se realiza una llamada de juez externo; se utilizan fórmulas, reglas, similitud y métricas reproducibles.
 - **Judge OpenAI**: cuando se habilita LLM-as-a-Judge y `EVAL_JUDGE_ENABLED=true`, DeepEval puede utilizar el modelo de juez seleccionado. RAGAS se mantiene como integración disponible y las métricas RAGAS-compatible deterministas continúan siendo los resultados canónicos del benchmark.
 
-Los combobox de **Motor SUT**, **Modelo SUT**, **Prompt version**, **Motor Judge** y **Modelo Judge** evitan que un valor escrito manualmente aparente activar un modelo que en realidad no se utilizó. **SUT significa System Under Test**: es el sistema o modelo que se está evaluando. Los combobox de modelos separan visualmente **Mini** y **Normales / alta capacidad**; `gpt-5.4-mini` es el valor inicial. En modo determinista el campo de modelo queda fijado en `deterministic`. El backend siempre expone el catálogo base Mini + normal de esta PoC y agrega cualquier modelo adicional definido en `OPENAI_MODELS`; de esta forma un `.env` antiguo no elimina los modelos nuevos del combobox. El prompt se obtiene de `datasets/prompts/`.
+Los combobox de **Motor SUT**, **Modelo SUT**, **Versión de prompt**, **Motor Judge** y **Modelo Judge** evitan que un valor escrito manualmente aparente activar un modelo que en realidad no se utilizó. **SUT significa System Under Test**: es el sistema o modelo que se está evaluando. Los combobox de modelos separan visualmente **Mini** y **Normales / alta capacidad**; `gpt-5.4-mini` es el valor inicial. En modo determinista el campo de modelo queda fijado en `deterministic`. El backend siempre expone el catálogo base Mini + normal de esta PoC y agrega cualquier modelo adicional definido en `OPENAI_MODELS`; de esta forma un `.env` antiguo no elimina los modelos nuevos del combobox. El prompt se obtiene de `datasets/prompts/`.
 
 La configuración deja de ser una etiqueta visual: `generation_provider=openai` provoca una llamada real al proveedor configurado; `generation_provider=deterministic` garantiza que no se realice ninguna llamada externa. La misma información se devuelve en chat, se almacena en cada run y queda visible en historial y comparación.
 
@@ -135,8 +135,14 @@ Se aplican las siguientes prácticas de experiencia de usuario:
 - trazas completas en un drawer separado para no contaminar el contenido funcional;
 - visualización de tools, argumentos, schema validation, latencia y evidencia recuperada;
 - dashboard por dimensiones con score, pass rate, quality gates, filtros, búsqueda y detalle técnico;
-- configuración de runtime mediante combobox para motor SUT, modelo, prompt version, motor Judge y modelo Judge;
-- identificación visible del motor realmente usado en cada respuesta de chat y en cada run;
+- resultados de suite y benchmark organizados como accordions mutuamente excluyentes: al ejecutar una evaluación individual se abre su resultado y se contrae el benchmark; al ejecutar el benchmark ocurre lo inverso;
+- al contraer un resultado permanece visible un resumen compacto con configuración, pass rate o ganador principal, evitando perder contexto;
+- las métricas se agrupan primero por dimensión y luego por métrica, con tarjetas visuales de score, threshold, estado y detalle de casos bajo demanda;
+- configuración de runtime mediante combobox para motor SUT, modelo, versión de prompt, motor Judge y modelo Judge;
+- ayuda contextual mediante botones `i` también en el chat: estrategia RAG, motor, modelo, versión de prompt, `Top K`, runtime y borrador de caso se explican bajo demanda sin ocupar espacio permanente;
+- la versión de prompt identifica un conjunto versionado de instrucciones del sistema, permitiendo comparar cambios de comportamiento sin mezclar otras variables;
+- identificación visible y compacta del motor realmente usado en cada respuesta de chat y en cada run;
+- consultas de dominio en lenguaje natural con singular/plural y variaciones morfológicas; por ejemplo, «qué tipos de transacciones existen» y «dime las transacciones rechazadas» se resuelven mediante tools de catálogo/listado y no se clasifican como OOD;
 - benchmark RAG de Native, Hybrid, GraphRAG, RAGLight y LightRAG sobre el mismo Golden Dataset y las mismas constantes experimentales;
 - matriz comparativa con MRR, nDCG@5, Precision@5, Recall@5, Context Precision/Recall/Relevancy, Faithfulness, Groundedness, Answer Relevancy, Correctness y Hallucination;
 - tooltip accesible en cada métrica del benchmark, con definición concreta de qué evalúa y cómo interpretar un score alto;
@@ -281,7 +287,7 @@ El orden siguiente corresponde al flujo normal de ejecución.
 |---:|---|---|---|
 | 1 | `GET /health` | Verifica disponibilidad del backend. | Expone también un resumen del runtime activo; los health checks de contenedor usan socket TCP para no generar spam HTTP. |
 | 2 | `GET /api/v1/runtime/options` | Obtiene opciones reales de ejecución. | Devuelve motores soportados, modelos OpenAI configurados, prompts versionados, embedding activo y estado de jueces externos. |
-| 3 | `POST /api/v1/chat/stream` | Analiza una consulta de payment processing. | SSE con eventos de routing, tools, retrieval, generación y resultado final; recibe motor, modelo y prompt version. |
+| 3 | `POST /api/v1/chat/stream` | Analiza una consulta de payment processing. | SSE con eventos de routing, tools, retrieval, generación y resultado final; recibe motor, modelo y versión de prompt. |
 | 4 | `GET /api/v1/chat/sessions/{session_id}` | Recupera el estado conversacional de una sesión. | Expone turnos persistidos en memoria acotada de la PoC. |
 | 5 | `GET /api/v1/traces/{trace_id}` | Inspecciona la ejecución del agente. | Devuelve eventos observables, tools, retrieval y uso; no incluye razonamiento privado. |
 | 6 | `GET /api/v1/evals/suites` | Lista suites disponibles. | Devuelve familias incluidas en cada suite. |
@@ -371,7 +377,7 @@ La solución completa se construye y se inicia con un único comando ejecutado d
 docker compose up
 ```
 
-No se requiere ejecutar previamente `docker build`, `docker compose build` ni el script de imágenes base. El `compose.yaml` raíz contiene la definición completa de la aplicación para que `docker compose up` construya y levante la pila en un único comando. `infrastructure/docker-compose.yml` queda reservado al modo de infraestructura solamente.
+No se requiere ejecutar previamente `docker build`, `docker compose build` ni el script de imágenes base. El `compose.yaml` raíz es la única definición Compose del proyecto y contiene la aplicación completa. Para el modo local se levantan únicamente `qdrant` y `memgraph` desde ese mismo archivo, evitando configuraciones duplicadas o divergentes.
 
 Durante la misma ejecución se realizan automáticamente estas etapas:
 
@@ -567,11 +573,11 @@ curl -s \
 
 ## Benchmark RAG desde la GUI
 
-En **Evals > RAG benchmark** se seleccionan dos o más estrategias; por defecto se incluyen Native RAG, Hybrid RAG, GraphRAG, RAGLight y LightRAG. El panel se presenta inmediatamente debajo de la configuración compacta de la suite para que el benchmark quede visible sin depender de textos explicativos extensos. Un único botón ejecuta la suite `rag` para cada estrategia manteniendo constantes el Golden Dataset, el motor SUT, el modelo, la versión de prompt y `Top K`. Al finalizar se realiza automáticamente la comparación de los runs.
+En **Evals > RAG benchmark** se seleccionan dos o más estrategias; por defecto se incluyen Native RAG, Hybrid RAG, GraphRAG, RAGLight y LightRAG. Los resultados del benchmark se presentan en un panel contraíble. El panel de benchmark y el resultado de evaluación individual son mutuamente excluyentes para reducir carga visual: la acción recién ejecutada se expande automáticamente y la otra se contrae. El panel se presenta inmediatamente debajo de la configuración compacta de la suite para que el benchmark quede visible sin depender de textos explicativos extensos. Un único botón ejecuta la suite `rag` para cada estrategia manteniendo constantes el Golden Dataset, el motor SUT, el modelo, la versión de prompt y `Top K`. Al finalizar se realiza automáticamente la comparación de los runs.
 
-La tabla resultante muestra lado a lado Hit/Precision/Recall/nDCG en K=1,3,5, MRR, mejora de reranking, Context Precision/Recall/Relevancy, Faithfulness, Groundedness, Answer Relevancy, Correctness, Hallucination, Semantic Similarity, Truthfulness, Coherence, latencia media y tokens medios. Cada fila identifica su estrategia ganadora y resalta el mejor valor. Todas las métricas incorporan un botón `i` con ayuda contextual accionada por click. El resumen superior identifica mejor calidad media, mejor Context Recall, menor latencia observada y un balance que aplica una penalización máxima del 10% por latencia sobre el score de calidad. Los runs quedan además disponibles en **Historial y comparación**.
+La tabla principal del benchmark muestra lado a lado Hit@5, Precision@5, Recall@5, nDCG@5, MRR, mejora de reranking, Context Precision/Recall/Relevancy, Faithfulness, Groundedness, Answer Relevancy, Correctness, Hallucination, Semantic Similarity, Truthfulness, Coherence, latencia media y tokens medios. Se usa `@5` como corte principal para evitar repetir la misma familia de métricas en `@1`, `@3` y `@5`. El sufijo `@K` significa que la métrica se calcula únicamente sobre los primeros `K` resultados recuperados. La vista **RAG > Detalle RAG > Completa** conserva `@1`, `@3` y `@5` para análisis fino cuando sea necesario. Cada fila del benchmark identifica su estrategia ganadora y resalta el mejor valor. Todas las métricas incorporan un botón `i` con ayuda contextual accionada por click. El resumen superior identifica mejor calidad media, mejor Context Recall, menor latencia observada y un balance que aplica una penalización máxima del 10% por latencia sobre el score de calidad. Los runs quedan además disponibles en **Historial y comparación**.
 
-La configuración de Evals utiliza ayuda contextual mediante botones `i`: SUT, motor, modelo, prompt, Top K y Judge se explican bajo demanda sin ocupar espacio permanente. La barra de dimensiones también incorpora ayuda por pestaña y se documenta explícitamente como un filtro de navegación, no como una barra de score.
+La configuración de Evals utiliza ayuda contextual mediante botones `i`: SUT, motor, modelo, prompt, Top K y Judge se explican bajo demanda sin ocupar espacio permanente. Los tooltips se muestran como popovers globales por encima de tablas y contenedores con scroll para evitar recortes. La barra de dimensiones incorpora ayuda por pestaña y se documenta explícitamente como un filtro de navegación, no como una barra de score. El benchmark se presenta como la acción principal de la sección; la **evaluación individual** se desplaza a un bloque secundario de soporte ubicado debajo del benchmark para evitar que ambas acciones compitan visualmente.
 
 El mismo benchmark puede ejecutarse desde consola junto con la suite completa mediante:
 

@@ -29,7 +29,7 @@ async def health() -> dict:
     return {
         "status": "ok",
         "service": settings.app_name,
-        "version": "1.1.0",
+        "version": "1.3.0",
         "runtime": {
             "generation_provider": settings.generation_provider,
             "generation_model": settings.openai_model if settings.generation_provider == "openai" else "deterministic",
@@ -52,13 +52,19 @@ async def runtime_options() -> dict:
             "deterministic": ["deterministic"],
             "openai": settings.openai_model_options,
         },
+        "judge_models": {
+            "deterministic": ["deterministic"],
+            "openai": settings.openai_judge_model_options,
+        },
         "prompt_versions": prompt_versions,
         "defaults": {
-            "generation_provider": settings.generation_provider,
-            "model": settings.openai_model if settings.generation_provider == "openai" else "deterministic",
+            # Se muestran OpenAI y un Mini por defecto aunque falte la clave; la GUI informa el problema antes de ejecutar.
+            # El motor determinista continúa disponible como alternativa explícita.
+            "generation_provider": "openai",
+            "model": settings.openai_model,
             "prompt_version": prompt_versions[0],
-            "judge_provider": settings.judge_provider,
-            "judge_model": settings.openai_model if settings.judge_provider == "openai" else "deterministic",
+            "judge_provider": "openai",
+            "judge_model": settings.openai_judge_model,
         },
         "embedding": {
             "provider": settings.embedding_provider,

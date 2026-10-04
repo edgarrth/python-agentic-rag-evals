@@ -1,2 +1,179 @@
-include:
-  - path: infrastructure/docker-compose.yml
+name: axiz-payments-agentic-rag-evals
+
+x-python-base-build: &python-base-build
+  context: .
+  dockerfile: infrastructure/docker/Dockerfile.python-base
+
+x-node-base-build: &node-base-build
+  context: .
+  dockerfile: infrastructure/docker/Dockerfile.node-base
+
+x-backend-build: &backend-build
+  context: .
+  dockerfile: infrastructure/docker/Dockerfile.backend
+  additional_contexts:
+    python_base: service:python-base
+
+x-frontend-build: &frontend-build
+  context: .
+  dockerfile: infrastructure/docker/Dockerfile.frontend
+  additional_contexts:
+    node_base: service:node-base
+
+services:
+  python-base:
+    image: axiz/payments-evals-python-base:local
+    pull_policy: build
+    build: *python-base-build
+    container_name: axiz-evals-python-base
+    entrypoint: ["python", "-c", "print('Imagen base Python preparada')"]
+    restart: "no"
+
+  node-base:
+    image: axiz/payments-evals-node-base:local
+    pull_policy: build
+    build: *node-base-build
+    container_name: axiz-evals-node-base
+    entrypoint: ["node", "--version"]
+    restart: "no"
+
+  qdrant:
+    image: qdrant/qdrant:v1.19.1
+    container_name: axiz-evals-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  memgraph:
+    image: memgraph/memgraph:3.13.1
+    container_name: axiz-evals-memgraph
+    command: ["--log-level=WARNING"]
+    ports:
+      - "7687:7687"
+      - "7444:7444"
+    volumes:
+      - memgraph_data:/var/lib/memgraph
+    restart: unless-stopped
+
+  backend:
+    image: axiz/payments-evals-backend:local
+    pull_policy: build
+    build: *backend-build
+    container_name: axiz-evals-backend
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      APP_ENV: docker
+      HOST: 0.0.0.0
+      BACKEND_PORT: 8000
+      BACKEND_URL: http://backend:8000
+      QDRANT_URL: http://qdrant:6333
+      MEMGRAPH_URI: bolt://memgraph:7687
+    ports:
+      - "8000:8000"
+    depends_on:
+      python-base:
+        condition: service_completed_successfully
+      qdrant:
+        condition: service_started
+      memgraph:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1',8000),2); s.close()"]
+      interval: 15s
+      timeout: 3s
+      retries: 10
+      start_period: 8s
+    restart: unless-stopped
+
+  dataset-seed:
+    image: axiz/payments-evals-backend:local
+    pull_policy: build
+    build: *backend-build
+    container_name: axiz-evals-dataset-seed
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      APP_ENV: docker
+      QDRANT_URL: http://qdrant:6333
+      MEMGRAPH_URI: bolt://memgraph:7687
+    working_dir: /app
+    command: ["python", "datasets/seed.py"]
+    volumes:
+      - ./datasets:/app/datasets:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: "no"
+
+  frontend:
+    image: axiz/payments-evals-frontend:local
+    pull_policy: build
+    build: *frontend-build
+    container_name: axiz-evals-frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      node-base:
+        condition: service_completed_successfully
+      backend:
+        condition: service_healthy
+      dataset-seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 10
+      start_period: 8s
+    restart: unless-stopped
+
+  promptfoo:
+    image: axiz/payments-evals-promptfoo:local
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.promptfoo
+    profiles: ["eval-tools"]
+    working_dir: /work
+    volumes:
+      - ./promptfoo:/work:ro
+    environment:
+      BACKEND_URL: http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+      dataset-seed:
+        condition: service_completed_successfully
+    command: ["eval", "-c", "/work/promptfooconfig.yaml", "--no-cache"]
+
+  promptfoo-external:
+    image: axiz/payments-evals-promptfoo:local
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.promptfoo
+    profiles: ["eval-tools-external"]
+    working_dir: /work
+    volumes:
+      - ./promptfoo:/work:ro
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      BACKEND_URL: http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+      dataset-seed:
+        condition: service_completed_successfully
+    command: ["eval", "-c", "/work/promptfooconfig.external.yaml", "--no-cache"]
+
+volumes:
+  qdrant_data:
+  memgraph_data:

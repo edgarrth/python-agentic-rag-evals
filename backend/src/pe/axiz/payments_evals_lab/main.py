@@ -14,7 +14,7 @@ def create_app() -> FastAPI:
     logging.basicConfig(level=getattr(logging, settings.log_level), format="%(asctime)s %(levelname)s %(name)s %(message)s")
     app = FastAPI(
         title=settings.app_name,
-        version="1.1.0",
+        version="1.3.0",
         description="Laboratorio reproducible de Evals para RAG, LLM y comportamiento agentic en payment processing.",
     )
     app.add_middleware(

@@ -233,7 +233,11 @@
                 </select>
                 <label for="chat-model-mobile">Modelo</label>
                 <select id="chat-model-mobile" [(ngModel)]="chatModelName" [disabled]="chatLoading() || chatGenerationProvider === 'deterministic'">
-                  @for (model of modelOptions(chatGenerationProvider); track model) { <option [value]="model">{{ model }}</option> }
+                  @if (chatGenerationProvider === 'deterministic') { <option value="deterministic">No aplica · motor determinista</option> }
+                  @else {
+                    <optgroup label="Mini · recomendados por defecto">@for (model of miniModelOptions(chatGenerationProvider); track model) { <option [value]="model">{{ modelDisplayLabel(model) }}</option> }</optgroup>
+                    <optgroup label="Normales / alta capacidad">@for (model of normalModelOptions(chatGenerationProvider); track model) { <option [value]="model">{{ modelDisplayLabel(model) }}</option> }</optgroup>
+                  }
                 </select>
                 <label for="chat-prompt-mobile">Prompt version</label>
                 <select id="chat-prompt-mobile" [(ngModel)]="chatPromptVersion" [disabled]="chatLoading()">
@@ -282,7 +286,11 @@
 
             <label for="chat-model">Modelo</label>
             <select id="chat-model" [(ngModel)]="chatModelName" [disabled]="chatLoading() || chatGenerationProvider === 'deterministic'">
-              @for (model of modelOptions(chatGenerationProvider); track model) { <option [value]="model">{{ model }}</option> }
+              @if (chatGenerationProvider === 'deterministic') { <option value="deterministic">No aplica · motor determinista</option> }
+              @else {
+                <optgroup label="Mini · recomendados por defecto">@for (model of miniModelOptions(chatGenerationProvider); track model) { <option [value]="model">{{ modelDisplayLabel(model) }}</option> }</optgroup>
+                <optgroup label="Normales / alta capacidad">@for (model of normalModelOptions(chatGenerationProvider); track model) { <option [value]="model">{{ modelDisplayLabel(model) }}</option> }</optgroup>
+              }
             </select>
 
             <label for="chat-prompt">Prompt version</label>
@@ -294,6 +302,8 @@
               <strong>{{ chatGenerationProvider === 'openai' ? 'LLM externo activo' : 'Modo reproducible' }}</strong>
               <span>{{ currentChatRuntimeLabel() }}</span>
               <small>Embeddings: {{ runtimeOptions()?.embedding?.provider || 'hashing' }} · {{ runtimeOptions()?.embedding?.model || 'hashing' }}</small>
+              @if (chatGenerationProvider === 'openai' && runtimeOptions()?.external_judges?.openai_key_configured) { <small class="text-success">OPENAI_API_KEY detectada por el backend.</small> }
+              @if (chatGenerationProvider === 'openai' && !runtimeOptions()?.external_judges?.openai_key_configured) { <small class="text-danger">OPENAI_API_KEY no llegó al backend. La lista de modelos permanece visible para diagnóstico, pero OpenAI no podrá ejecutarse hasta recrear el backend con el .env correcto.</small> }
             </div>
 
             <label for="top-k">Top K <span>{{ topK }}</span></label>
@@ -329,34 +339,88 @@
           <div><span class="eyebrow">Quality engineering</span><h2>Ejecutar suite de evaluación</h2><p>Se utiliza un Golden Dataset común para separar fallos de retrieval, generación, agentic behavior, routing, seguridad y regresión.</p></div>
         </div>
 
-        <div class="run-config card-surface">
-          <div class="field"><label for="suite">Suite</label><select id="suite" [(ngModel)]="selectedSuite" [disabled]="evalLoading() || benchmarkLoading()">@for (entry of objectKeys(suiteCatalog()); track entry) { <option [value]="entry">{{ entry }}</option> }</select></div>
-          <div class="field"><label for="eval-strategy">Estrategia</label><select id="eval-strategy" [(ngModel)]="evalStrategy" [disabled]="evalLoading() || benchmarkLoading()">@for (item of strategies; track item.value) { <option [ngValue]="item.value">{{ item.label }}</option> }</select></div>
-          <div class="field"><label for="eval-provider">Motor SUT</label><select id="eval-provider" [(ngModel)]="evalGenerationProvider" (ngModelChange)="onEvalProviderChange()" [disabled]="evalLoading() || benchmarkLoading()">@for (item of providerOptions; track item.value) { <option [ngValue]="item.value">{{ item.label }}</option> }</select></div>
-          <div class="field"><label for="prompt-version">Prompt version</label><select id="prompt-version" [(ngModel)]="promptVersion" [disabled]="evalLoading() || benchmarkLoading()">@for (version of promptVersions(); track version) { <option [value]="version">{{ version }}</option> }</select></div>
-          <div class="field"><label for="model-name">Modelo SUT</label><select id="model-name" [(ngModel)]="modelName" [disabled]="evalLoading() || benchmarkLoading() || evalGenerationProvider === 'deterministic'">@for (model of modelOptions(evalGenerationProvider); track model) { <option [value]="model">{{ model }}</option> }</select></div>
-          <div class="field"><label for="eval-top-k">Top K</label><select id="eval-top-k" [(ngModel)]="evalTopK" [disabled]="evalLoading() || benchmarkLoading()">@for (value of [1, 3, 5, 7, 10]; track value) { <option [ngValue]="value">{{ value }}</option> }</select></div>
-          <label class="check-row external-judge"><input type="checkbox" [(ngModel)]="includeExternalJudges" [disabled]="evalLoading() || benchmarkLoading()"><span>Habilitar LLM-as-a-Judge externo</span></label>
-          <div class="field"><label for="judge-provider">Motor Judge</label><select id="judge-provider" [(ngModel)]="judgeProvider" (ngModelChange)="onJudgeProviderChange()" [disabled]="!includeExternalJudges || evalLoading() || benchmarkLoading()">@for (item of providerOptions; track item.value) { <option [ngValue]="item.value">{{ item.label }}</option> }</select></div>
-          <div class="field"><label for="judge-model">Modelo Judge</label><select id="judge-model" [(ngModel)]="judgeModelName" [disabled]="!includeExternalJudges || judgeProvider === 'deterministic' || evalLoading() || benchmarkLoading()">@for (model of modelOptions(judgeProvider); track model) { <option [value]="model">{{ model }}</option> }</select></div>
-          <div class="runtime-summary" [class.external]="evalGenerationProvider === 'openai' || (includeExternalJudges && judgeProvider === 'openai')">
-            <strong>Modo de ejecución</strong><span>{{ currentEvalRuntimeLabel() }}</span>
-            @if (includeExternalJudges && !runtimeOptions()?.external_judges?.enabled_by_env) { <small>El checkbox solicita jueces externos, pero EVAL_JUDGE_ENABLED=false. Se reportará la integración sin ejecutar un juez remoto.</small> }
-            @if ((evalGenerationProvider === 'openai' || (includeExternalJudges && judgeProvider === 'openai')) && !runtimeOptions()?.external_judges?.openai_key_configured) { <small class="text-danger">OPENAI_API_KEY no está configurada en el backend.</small> }
+        <div class="eval-config card-surface">
+          <div class="config-section-head">
+            <div>
+              <span class="eyebrow">Configuración</span>
+              <h3>Suite y sistema evaluado</h3>
+            </div>
+            <span class="tooltip-anchor">
+              <button class="info-button" type="button" aria-label="Explicar configuración de Evals" [attr.aria-expanded]="tooltipOpen('config-runtime')" (click)="toggleTooltip('config-runtime')">i</button>
+              @if (tooltipOpen('config-runtime')) { <span class="info-popover wide" role="tooltip">{{ evalConfigHelp('runtime') }}</span> }
+            </span>
           </div>
-          @if (evalLoading()) {
-            <button class="button danger run-action" type="button" (click)="stopRunMonitoring()">Detener seguimiento</button>
-          } @else {
-            <button class="button primary run-action" type="button" (click)="runEvaluation()" [disabled]="benchmarkLoading()">Ejecutar suite</button>
-          }
+
+          <div class="eval-config-grid">
+            <div class="field">
+              <div class="field-head"><label for="suite">Suite</label><span class="tooltip-anchor"><button class="info-button small" type="button" aria-label="Explicar Suite" (click)="toggleTooltip('config-suite')">i</button>@if (tooltipOpen('config-suite')) { <span class="info-popover" role="tooltip">{{ evalConfigHelp('suite') }}</span> }</span></div>
+              <select id="suite" [(ngModel)]="selectedSuite" [disabled]="evalLoading() || benchmarkLoading()">@for (entry of objectKeys(suiteCatalog()); track entry) { <option [value]="entry">{{ entry }}</option> }</select>
+            </div>
+
+            <div class="field">
+              <div class="field-head"><label for="eval-strategy">Estrategia</label><span class="tooltip-anchor"><button class="info-button small" type="button" aria-label="Explicar estrategia RAG" (click)="toggleTooltip('config-strategy')">i</button>@if (tooltipOpen('config-strategy')) { <span class="info-popover" role="tooltip">{{ evalConfigHelp('strategy') }}</span> }</span></div>
+              <select id="eval-strategy" [(ngModel)]="evalStrategy" [disabled]="evalLoading() || benchmarkLoading()">@for (item of strategies; track item.value) { <option [ngValue]="item.value">{{ item.label }}</option> }</select>
+            </div>
+
+            <div class="field">
+              <div class="field-head"><label for="eval-provider">Motor SUT</label><span class="tooltip-anchor"><button class="info-button small" type="button" aria-label="Explicar motor SUT" (click)="toggleTooltip('config-sut-provider')">i</button>@if (tooltipOpen('config-sut-provider')) { <span class="info-popover" role="tooltip">{{ evalConfigHelp('sutProvider') }}</span> }</span></div>
+              <select id="eval-provider" [(ngModel)]="evalGenerationProvider" (ngModelChange)="onEvalProviderChange()" [disabled]="evalLoading() || benchmarkLoading()">@for (item of providerOptions; track item.value) { <option [ngValue]="item.value">{{ item.label }}</option> }</select>
+            </div>
+
+            <div class="field">
+              <div class="field-head"><label for="model-name">Modelo SUT</label><span class="tooltip-anchor"><button class="info-button small" type="button" aria-label="Explicar modelo SUT" (click)="toggleTooltip('config-sut-model')">i</button>@if (tooltipOpen('config-sut-model')) { <span class="info-popover" role="tooltip">{{ evalConfigHelp('sutModel') }}</span> }</span></div>
+              <select id="model-name" [(ngModel)]="modelName" [disabled]="evalLoading() || benchmarkLoading() || evalGenerationProvider === 'deterministic'">@if (evalGenerationProvider === 'deterministic') { <option value="deterministic">No aplica · determinista</option> } @else { <optgroup label="Mini · predeterminados">@for (model of miniModelOptions(evalGenerationProvider); track model) { <option [value]="model">{{ modelDisplayLabel(model) }}</option> }</optgroup><optgroup label="Normales / alta capacidad">@for (model of normalModelOptions(evalGenerationProvider); track model) { <option [value]="model">{{ modelDisplayLabel(model) }}</option> }</optgroup> }</select>
+            </div>
+
+            <div class="field">
+              <div class="field-head"><label for="prompt-version">Prompt</label><span class="tooltip-anchor"><button class="info-button small" type="button" aria-label="Explicar versión de prompt" (click)="toggleTooltip('config-prompt')">i</button>@if (tooltipOpen('config-prompt')) { <span class="info-popover" role="tooltip">{{ evalConfigHelp('prompt') }}</span> }</span></div>
+              <select id="prompt-version" [(ngModel)]="promptVersion" [disabled]="evalLoading() || benchmarkLoading()">@for (version of promptVersions(); track version) { <option [value]="version">{{ version }}</option> }</select>
+            </div>
+
+            <div class="field">
+              <div class="field-head"><label for="eval-top-k">Top K</label><span class="tooltip-anchor"><button class="info-button small" type="button" aria-label="Explicar Top K" (click)="toggleTooltip('config-top-k')">i</button>@if (tooltipOpen('config-top-k')) { <span class="info-popover align-right" role="tooltip">{{ evalConfigHelp('topK') }}</span> }</span></div>
+              <select id="eval-top-k" [(ngModel)]="evalTopK" [disabled]="evalLoading() || benchmarkLoading()">@for (value of [1, 3, 5, 7, 10]; track value) { <option [ngValue]="value">{{ value }}</option> }</select>
+            </div>
+          </div>
+
+          <div class="judge-row">
+            <div class="judge-toggle">
+              <label class="check-row external-judge"><input type="checkbox" [(ngModel)]="includeExternalJudges" [disabled]="evalLoading() || benchmarkLoading()"><span>LLM-as-a-Judge externo</span></label>
+              <span class="tooltip-anchor"><button class="info-button small" type="button" aria-label="Explicar LLM-as-a-Judge" (click)="toggleTooltip('config-judge-enabled')">i</button>@if (tooltipOpen('config-judge-enabled')) { <span class="info-popover" role="tooltip">{{ evalConfigHelp('externalJudge') }}</span> }</span>
+            </div>
+            <div class="field compact-field">
+              <div class="field-head"><label for="judge-provider">Motor Judge</label><span class="tooltip-anchor"><button class="info-button small" type="button" aria-label="Explicar motor Judge" (click)="toggleTooltip('config-judge-provider')">i</button>@if (tooltipOpen('config-judge-provider')) { <span class="info-popover" role="tooltip">{{ evalConfigHelp('judgeProvider') }}</span> }</span></div>
+              <select id="judge-provider" [(ngModel)]="judgeProvider" (ngModelChange)="onJudgeProviderChange()" [disabled]="!includeExternalJudges || evalLoading() || benchmarkLoading()">@for (item of providerOptions; track item.value) { <option [ngValue]="item.value">{{ item.label }}</option> }</select>
+            </div>
+            <div class="field compact-field">
+              <div class="field-head"><label for="judge-model">Modelo Judge</label><span class="tooltip-anchor"><button class="info-button small" type="button" aria-label="Explicar modelo Judge" (click)="toggleTooltip('config-judge-model')">i</button>@if (tooltipOpen('config-judge-model')) { <span class="info-popover align-right" role="tooltip">{{ evalConfigHelp('judgeModel') }}</span> }</span></div>
+              <select id="judge-model" [(ngModel)]="judgeModelName" [disabled]="!includeExternalJudges || judgeProvider === 'deterministic' || evalLoading() || benchmarkLoading()">@if (judgeProvider === 'deterministic') { <option value="deterministic">No aplica · determinista</option> } @else { <optgroup label="Mini · predeterminados">@for (model of miniModelOptions(judgeProvider, true); track model) { <option [value]="model">{{ modelDisplayLabel(model) }}</option> }</optgroup><optgroup label="Normales / alta capacidad">@for (model of normalModelOptions(judgeProvider, true); track model) { <option [value]="model">{{ modelDisplayLabel(model) }}</option> }</optgroup> }</select>
+            </div>
+          </div>
+
+          <div class="runtime-strip" [class.external]="evalGenerationProvider === 'openai' || (includeExternalJudges && judgeProvider === 'openai')">
+            <div class="runtime-strip-main"><strong>Runtime</strong><span>{{ currentEvalRuntimeLabel() }}</span><span class="tooltip-anchor"><button class="info-button small" type="button" aria-label="Explicar runtime" (click)="toggleTooltip('runtime-summary')">i</button>@if (tooltipOpen('runtime-summary')) { <span class="info-popover" role="tooltip">{{ evalConfigHelp('runtime') }}</span> }</span></div>
+            <div class="runtime-flags">
+              @if ((evalGenerationProvider === 'openai' || (includeExternalJudges && judgeProvider === 'openai')) && runtimeOptions()?.external_judges?.openai_key_configured) { <span class="runtime-flag success">OpenAI key OK</span> }
+              @if ((evalGenerationProvider === 'openai' || (includeExternalJudges && judgeProvider === 'openai')) && !runtimeOptions()?.external_judges?.openai_key_configured) { <span class="runtime-flag danger">OpenAI key no detectada</span> }
+              @if (includeExternalJudges && !runtimeOptions()?.external_judges?.enabled_by_env) { <span class="runtime-flag danger">Judge externo bloqueado</span> }
+            </div>
+            @if (evalLoading()) { <button class="button danger run-action" type="button" (click)="stopRunMonitoring()">Detener seguimiento</button> }
+            @else { <button class="button primary run-action" type="button" (click)="runEvaluation()" [disabled]="benchmarkLoading()">Ejecutar suite</button> }
+          </div>
         </div>
 
         <section class="benchmark-panel card-surface" aria-labelledby="rag-benchmark-title">
           <div class="section-heading benchmark-heading">
-            <div><span class="eyebrow">RAG benchmark</span><h3 id="rag-benchmark-title">Comparar todas las estrategias con el mismo Golden Dataset</h3><p>Se mantienen constantes dataset, prompt, modelo, motor y Top K. Solo cambia la estrategia RAG.</p></div>
+            <div>
+              <div class="heading-with-info"><span class="eyebrow">RAG benchmark</span><span class="tooltip-anchor"><button class="info-button small" type="button" aria-label="Explicar benchmark RAG" (click)="toggleTooltip('benchmark-main')">i</button>@if (tooltipOpen('benchmark-main')) { <span class="info-popover wide" role="tooltip">Ejecuta el mismo Golden Dataset contra Native RAG, Hybrid RAG, GraphRAG, RAGLight y LightRAG manteniendo constantes SUT, modelo, prompt y Top K. Así la variable comparada es únicamente la estrategia RAG.</span> }</span></div>
+              <h3 id="rag-benchmark-title">Benchmark comparativo de estrategias RAG</h3>
+              <p>Mismo dataset y configuración; cambia únicamente la estrategia RAG.</p>
+            </div>
             @if (benchmarkLoading()) { <button class="button danger" type="button" (click)="stopBenchmark()">Detener benchmark</button> }
-            @else { <button class="button primary" type="button" (click)="runRagBenchmark()" [disabled]="benchmarkSelection().length < 2 || evalLoading()">Ejecutar comparación</button> }
+            @else { <button class="button primary" type="button" (click)="runRagBenchmark()" [disabled]="benchmarkSelection().length < 2 || evalLoading()">Ejecutar benchmark</button> }
           </div>
+
           <div class="benchmark-controls">
             <div class="benchmark-strategies" role="group" aria-label="Estrategias incluidas">
               @for (item of benchmarkStrategyOptions; track item.value) {
@@ -366,27 +430,52 @@
             <div class="benchmark-constants">
               <span><strong>Dataset</strong> Golden RAG</span><span><strong>Top K</strong> {{ evalTopK }}</span><span><strong>SUT</strong> {{ providerLabel(evalGenerationProvider) }} · {{ modelName }}</span><span><strong>Prompt</strong> {{ promptVersion }}</span>
             </div>
+            <div class="benchmark-metric-catalog" aria-label="Métricas incluidas en el benchmark">
+              @for (metric of benchmarkMetricCatalog(); track metric) {
+                <span class="benchmark-metric-chip"><span>{{ humanize(metric) }}</span><span class="tooltip-anchor"><button class="info-button tiny" type="button" [attr.aria-label]="'Explicar ' + humanize(metric)" (click)="toggleTooltip('benchmark-catalog-' + metric)">i</button>@if (tooltipOpen('benchmark-catalog-' + metric)) { <span class="info-popover" role="tooltip">{{ metricDescription(metric) }}</span> }</span></span>
+              }
+            </div>
           </div>
+
           @if (benchmarkLoading()) {
-            <div class="benchmark-progress" role="status" aria-live="polite"><div><strong>Benchmark en curso</strong><span>{{ Math.round(benchmarkProgress() * 100) }}%</span></div><div class="progress-track"><span [style.width.%]="benchmarkProgress() * 100"></span></div></div>
+            <div class="benchmark-progress" role="status" aria-live="polite">
+              <div><span class="heading-with-info"><strong>Benchmark en curso</strong><span class="tooltip-anchor"><button class="info-button tiny" type="button" aria-label="Explicar progreso del benchmark" (click)="toggleTooltip('benchmark-progress')">i</button>@if (tooltipOpen('benchmark-progress')) { <span class="info-popover" role="tooltip">Representa la proporción de estrategias RAG que ya terminaron. Cada estrategia ejecuta la misma suite RAG antes de avanzar a la siguiente.</span> }</span></span><span>{{ Math.round(benchmarkProgress() * 100) }}%</span></div>
+              <div class="progress-track"><span [style.width.%]="benchmarkProgress() * 100"></span></div>
+            </div>
           }
+
           @if (benchmarkComparison(); as bench) {
             <div class="benchmark-summary-grid">
-              <div class="kpi"><span>Mejor calidad</span><strong>{{ benchmarkBestQuality() }}</strong><small>Promedio de métricas RAG</small></div>
-              <div class="kpi"><span>Mejor recall</span><strong>{{ benchmarkBestRecall() }}</strong><small>Context Recall</small></div>
-              <div class="kpi"><span>Menor latencia</span><strong>{{ benchmarkBestLatency() }}</strong><small>Promedio de generación medido</small></div>
-              <div class="kpi"><span>Mejor balance</span><strong>{{ benchmarkBestBalance() }}</strong><small>Calidad con penalización de latencia del 10%</small></div>
+              <div class="kpi"><div class="kpi-label"><span>Mejor calidad</span><span class="tooltip-anchor"><button class="info-button tiny" type="button" aria-label="Explicar mejor calidad" (click)="toggleTooltip('benchmark-best-quality')">i</button>@if (tooltipOpen('benchmark-best-quality')) { <span class="info-popover" role="tooltip">Promedio de las métricas RAG con score. Resume calidad global de retrieval y generación.</span> }</span></div><strong>{{ benchmarkBestQuality() }}</strong></div>
+              <div class="kpi"><div class="kpi-label"><span>Mejor recall</span><span class="tooltip-anchor"><button class="info-button tiny" type="button" aria-label="Explicar mejor recall" (click)="toggleTooltip('benchmark-best-recall')">i</button>@if (tooltipOpen('benchmark-best-recall')) { <span class="info-popover" role="tooltip">Ganador según Context Recall: estrategia que recupera mayor proporción de la evidencia necesaria.</span> }</span></div><strong>{{ benchmarkBestRecall() }}</strong></div>
+              <div class="kpi"><div class="kpi-label"><span>Menor latencia</span><span class="tooltip-anchor"><button class="info-button tiny" type="button" aria-label="Explicar menor latencia" (click)="toggleTooltip('benchmark-best-latency')">i</button>@if (tooltipOpen('benchmark-best-latency')) { <span class="info-popover" role="tooltip">Ganador por menor promedio de latencia total observada durante las respuestas RAG.</span> }</span></div><strong>{{ benchmarkBestLatency() }}</strong></div>
+              <div class="kpi"><div class="kpi-label"><span>Mejor balance</span><span class="tooltip-anchor"><button class="info-button tiny" type="button" aria-label="Explicar mejor balance" (click)="toggleTooltip('benchmark-best-balance')">i</button>@if (tooltipOpen('benchmark-best-balance')) { <span class="info-popover align-right" role="tooltip">Combina calidad promedio con una penalización del 10% por latencia relativa. Sirve como indicador práctico, no sustituye las métricas individuales.</span> }</span></div><strong>{{ benchmarkBestBalance() }}</strong></div>
             </div>
+
             <div class="metric-table-wrap benchmark-table-wrap">
               <table class="metric-table comparison-table">
-                <thead><tr><th>Métrica</th>@for (runId of bench.runs; track runId) { <th>{{ humanize(benchmarkRunLabel(runId)) }}</th> }</tr></thead>
-                <tbody>@for (row of benchmarkRows(); track row['metric']) { <tr><td><strong>{{ humanize($any(row['metric'])) }}</strong></td>@for (runId of bench.runs; track runId) { <td class="mono">{{ row[runId] === null ? '—' : scoreText($any(row[runId])) }}</td> }</tr> }</tbody>
+                <thead><tr><th>Métrica</th>@for (runId of bench.runs; track runId) { <th>{{ humanize(benchmarkRunLabel(runId)) }}</th> }<th>Ganador</th></tr></thead>
+                <tbody>
+                  @for (row of benchmarkRows(); track row['metric']) {
+                    <tr>
+                      <td><span class="metric-name-with-help"><strong>{{ humanize($any(row['metric'])) }}</strong><span class="tooltip-anchor"><button class="info-button tiny" type="button" [attr.aria-label]="'Explicar ' + humanize($any(row['metric']))" (click)="toggleTooltip('benchmark-row-' + $any(row['metric']))">i</button>@if (tooltipOpen('benchmark-row-' + $any(row['metric']))) { <span class="info-popover" role="tooltip">{{ metricDescription($any(row['metric'])) }}</span> }</span></span></td>
+                      @for (runId of bench.runs; track runId) { <td class="mono benchmark-value" [class.metric-winner]="benchmarkIsWinner(row, runId)">{{ benchmarkValueText($any(row['metric']), row[runId]) }}</td> }
+                      <td><span class="winner-badge">{{ benchmarkMetricWinner(row) }}</span></td>
+                    </tr>
+                  }
+                </tbody>
               </table>
             </div>
+
             <div class="benchmark-run-cards">
               @for (run of benchmarkRuns(); track run.run_id) {
                 <article><strong>{{ humanize(benchmarkRunLabel(run.run_id)) }}</strong><span>Quality {{ scoreText(benchmarkQuality(run)) }}</span><span>Latencia {{ formatMs(benchmarkLatency(run)) }}</span><span [class.text-success]="run.gates_passed === true" [class.text-danger]="run.gates_passed === false">Gates {{ run.gates_passed ? 'PASS' : 'FAIL' }}</span></article>
               }
+            </div>
+          } @else if (!benchmarkLoading()) {
+            <div class="benchmark-empty">
+              <strong>Aún no se ejecutó el benchmark.</strong>
+              <span>Selecciona al menos dos estrategias y ejecuta la comparación para obtener métricas lado a lado y un ganador por métrica.</span>
             </div>
           }
         </section>
@@ -394,7 +483,7 @@
         @if (evalLoading() || currentRun()) {
           <div class="run-status card-surface" role="status" aria-live="polite">
             <div class="run-status-head">
-              <div><strong>{{ currentRun()?.run_id || 'Preparando ejecución' }}</strong><span>{{ evalFamily() || statusLabel(currentRun()?.status || 'queued') }}</span>@if (currentRun()?.request_config; as config) { <small class="run-runtime">SUT {{ providerLabel($any(config['generation_provider'])) }} · {{ config['model'] || 'deterministic' }} · Prompt {{ config['prompt_version'] || 'v1' }} · Judge {{ providerLabel($any(config['judge_provider'])) }}</small> }</div>
+              <div><strong>{{ currentRun()?.run_id || 'Preparando ejecución' }}</strong><span class="heading-with-info">{{ evalFamily() || statusLabel(currentRun()?.status || 'queued') }}<span class="tooltip-anchor"><button class="info-button tiny" type="button" aria-label="Explicar progreso del run" (click)="toggleTooltip('run-progress')">i</button>@if (tooltipOpen('run-progress')) { <span class="info-popover" role="tooltip">La barra indica el porcentaje de familias de evaluación completadas dentro de la suite seleccionada. No representa calidad ni pass rate.</span> }</span></span>@if (currentRun()?.request_config; as config) { <small class="run-runtime">SUT {{ providerLabel($any(config['generation_provider'])) }} · {{ config['model'] || 'deterministic' }} · Prompt {{ config['prompt_version'] || 'v1' }} · Judge {{ providerLabel($any(config['judge_provider'])) }}</small> }</div>
               <span class="status-badge" [class.pass]="currentRun()?.gates_passed === true" [class.fail]="currentRun()?.gates_passed === false">{{ currentRun()?.gates_passed === true ? 'Gates PASS' : currentRun()?.gates_passed === false ? 'Gates FAIL' : statusLabel(currentRun()?.status || 'running') }}</span>
             </div>
             <div class="progress-track" [attr.aria-valuenow]="Math.round((evalLoading() ? evalProgress() : currentRun()?.progress || 0) * 100)" aria-valuemin="0" aria-valuemax="100" role="progressbar">
@@ -411,9 +500,16 @@
             <div class="kpi"><span>Quality gates</span><strong [class.text-success]="run.gates_passed === true" [class.text-danger]="run.gates_passed === false">{{ run.gates_passed === true ? 'PASS' : run.gates_passed === false ? 'FAIL' : 'Pendiente' }}</strong><small>{{ run.gate_failures.length }} bloqueos</small></div>
           </div>
 
+          <div class="eval-tabs-head">
+            <div><strong>Dimensiones de evaluación</strong><span>Selecciona una vista para filtrar las métricas del run.</span></div>
+            <span class="tooltip-anchor"><button class="info-button small" type="button" aria-label="Explicar barra de dimensiones" (click)="toggleTooltip('eval-tabs-help')">i</button>@if (tooltipOpen('eval-tabs-help')) { <span class="info-popover align-right" role="tooltip">Esta barra no representa un score. Son filtros de navegación: cada pestaña muestra una familia distinta de Evals ejecutadas dentro del mismo run.</span> }</span>
+          </div>
           <div class="eval-tabs" role="tablist" aria-label="Dimensiones de evaluación">
             @for (tab of evalTabs; track tab.id) {
-              <button type="button" role="tab" class="eval-tab" [class.active]="evalView() === tab.id" [attr.aria-selected]="evalView() === tab.id" (click)="setEvalView(tab.id)">{{ tab.label }}</button>
+              <div class="eval-tab-item">
+                <button type="button" role="tab" class="eval-tab" [class.active]="evalView() === tab.id" [attr.aria-selected]="evalView() === tab.id" (click)="setEvalView(tab.id)">{{ tab.label }}</button>
+                <span class="tooltip-anchor"><button class="tab-info" type="button" [attr.aria-label]="'Explicar ' + tab.label" (click)="toggleTooltip('eval-tab-' + tab.id)">i</button>@if (tooltipOpen('eval-tab-' + tab.id)) { <span class="info-popover" role="tooltip">{{ tabDescription(tab) }}</span> }</span>
+              </div>
             }
           </div>
 
@@ -421,9 +517,9 @@
             <div class="dimension-grid">
               @for (dimension of dimensionCards(); track dimension.dimension) {
                 <article class="dimension-card">
-                  <div class="dimension-head"><strong>{{ dimension.label }}</strong><span>{{ dimension.total }} métricas</span></div>
+                  <div class="dimension-head"><span class="metric-name-with-help"><strong>{{ dimension.label }}</strong><span class="tooltip-anchor"><button class="info-button tiny" type="button" [attr.aria-label]="'Explicar ' + dimension.label" (click)="toggleTooltip('dimension-' + dimension.dimension)">i</button>@if (tooltipOpen('dimension-' + dimension.dimension)) { <span class="info-popover" role="tooltip">{{ dimensionDescription(dimension.dimension) }}</span> }</span></span><span>{{ dimension.total }} métricas</span></div>
                   <div class="dimension-score">{{ scoreText(dimension.score) }}</div>
-                  <div class="metric-bar"><span [style.width.%]="dimension.score * 100"></span></div>
+                  <div class="metric-bar" role="meter" [attr.aria-label]="'Score promedio de ' + dimension.label" [attr.aria-valuenow]="Math.round(dimension.score * 100)" aria-valuemin="0" aria-valuemax="100"><span [style.width.%]="dimension.score * 100"></span></div>
                   <div class="dimension-foot"><span>{{ dimension.passed }} pass</span><span>{{ dimension.failed }} fail</span></div>
                 </article>
               }
@@ -447,7 +543,7 @@
                 <tbody>
                   @for (metric of visibleMetrics(); track $index) {
                     <tr>
-                      <td><strong>{{ humanize(metric.metric) }}</strong><div class="score-line"><span [style.width.%]="scorePercent(metric)"></span></div></td>
+                      <td><span class="metric-name-with-help"><strong>{{ humanize(metric.metric) }}</strong><span class="tooltip-anchor"><button class="info-button tiny" type="button" [attr.aria-label]="'Explicar '+ humanize(metric.metric)" (click)="toggleTooltip('metric-' + metric.metric + '-' + $index)">i</button>@if (tooltipOpen('metric-' + metric.metric + '-' + $index)) { <span class="info-popover" role="tooltip">{{ metricDescription(metric.metric) }}</span> }</span></span><div class="score-line" role="meter" [attr.aria-label]="'Score de '+ humanize(metric.metric)" [attr.aria-valuenow]="scorePercent(metric)" aria-valuemin="0" aria-valuemax="100"><span [style.width.%]="scorePercent(metric)"></span></div></td>
                       <td>{{ humanize(metric.dimension) }}</td>
                       <td class="mono">{{ scoreText(metric.score) }}</td>
                       <td class="mono">{{ scoreText(metric.threshold) }}</td>

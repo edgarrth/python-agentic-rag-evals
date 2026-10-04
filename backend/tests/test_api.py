@@ -30,6 +30,14 @@ def test_runtime_options_expose_real_execution_modes() -> None:
     assert payload["generation_providers"] == ["deterministic", "openai"]
     assert "deterministic" in payload["models"]
     assert "openai" in payload["models"]
+    assert payload["defaults"]["generation_provider"] == "openai"
+    assert payload["defaults"]["model"] == "gpt-5.4-mini"
+    assert payload["defaults"]["judge_provider"] == "openai"
+    assert payload["defaults"]["judge_model"] == "gpt-5.4-mini"
+    assert payload["models"]["openai"][0] == "gpt-5.4-mini"
+    assert "gpt-4.1-mini" in payload["models"]["openai"]
+    assert "gpt-6.1-sol" in payload["models"]["openai"]
+    assert "gpt-6-astra" in payload["judge_models"]["openai"]
     assert "v1" in payload["prompt_versions"]
 
 

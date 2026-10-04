@@ -33,6 +33,7 @@ interface EvalTab {
   id: EvalView;
   label: string;
   dimensions: string[];
+  description: string;
 }
 
 @Component({
@@ -77,18 +78,18 @@ export class AppComponent implements OnInit {
   ];
 
   readonly evalTabs: EvalTab[] = [
-    { id: 'overview', label: 'Overview', dimensions: [] },
-    { id: 'agent', label: 'Agent', dimensions: ['agentic'] },
-    { id: 'rag', label: 'RAG', dimensions: ['retrieval', 'rag_retrieval', 'rag_generation'] },
-    { id: 'routing', label: 'Routing', dimensions: ['routing'] },
-    { id: 'graph', label: 'Graph / Entities', dimensions: ['graph'] },
-    { id: 'prompts', label: 'Prompts', dimensions: ['prompt'] },
-    { id: 'safety', label: 'Safety & Red Team', dimensions: ['safety', 'adversarial'] },
-    { id: 'conversation', label: 'Conversación', dimensions: ['conversation', 'robustness'] },
-    { id: 'performance', label: 'Performance & Cost', dimensions: ['performance'] },
-    { id: 'regression', label: 'Regression & Drift', dimensions: ['regression', 'drift', 'uncertainty'] },
-    { id: 'voice', label: 'Voice', dimensions: ['voice_stt', 'voice_tts', 'voice_performance', 'voice_conversation'] },
-    { id: 'all', label: 'Todas', dimensions: [] }
+    { id: 'overview', label: 'Resumen', dimensions: [], description: 'Vista ejecutiva del run: score global, cobertura, quality gates y promedio por dimensión.' },
+    { id: 'agent', label: 'Agente', dimensions: ['agentic'], description: 'Evalúa Task Completion, selección de tools, corrección de argumentos, relevancia de turnos y completitud de la conversación.' },
+    { id: 'rag', label: 'RAG', dimensions: ['retrieval', 'rag_retrieval', 'rag_generation'], description: 'Evalúa recuperación y generación RAG: ranking, cobertura, relevancia del contexto, fidelidad y exactitud de la respuesta.' },
+    { id: 'routing', label: 'Routing', dimensions: ['routing'], description: 'Evalúa selección de intención y estrategia, precisión/recall/F1, matriz de confusión y comportamiento Out-of-Domain.' },
+    { id: 'graph', label: 'Graph / Entities', dimensions: ['graph'], description: 'Evalúa entidades, relaciones y precisión del retrieval basado en grafo para GraphRAG.' },
+    { id: 'prompts', label: 'Prompts', dimensions: ['prompt'], description: 'Evalúa formato, JSON/Schema, regex, similitud semántica, rúbricas y sensibilidad a cambios del prompt.' },
+    { id: 'safety', label: 'Safety & Red Team', dimensions: ['safety', 'adversarial'], description: 'Evalúa toxicidad, bias, fuga de PII/secretos, policy compliance, prompt injection, jailbreak y entradas adversariales.' },
+    { id: 'conversation', label: 'Conversación', dimensions: ['conversation', 'robustness'], description: 'Evalúa retención de contexto, resolución de referencias, ambigüedad, fallback, recovery y degradación controlada.' },
+    { id: 'performance', label: 'Performance & Cost', dimensions: ['performance'], description: 'Evalúa latencias de retrieval/generación/total, tokens y costo cuando el proveedor lo reporta.' },
+    { id: 'regression', label: 'Regression & Drift', dimensions: ['regression', 'drift', 'uncertainty'], description: 'Evalúa baseline vs candidate, degradación temporal, drift, thresholds y quality gates.' },
+    { id: 'voice', label: 'Voice', dimensions: ['voice_stt', 'voice_tts', 'voice_performance', 'voice_conversation'], description: 'Suite offline de referencia para WER, TTFC, RTF, calidad TTS, fallback y robustez conversacional de voz.' },
+    { id: 'all', label: 'Todas', dimensions: [], description: 'Muestra todas las métricas generadas por la suite actual sin filtrar por familia.' }
   ];
 
   workspace = signal<Workspace>('chat');
@@ -97,6 +98,7 @@ export class AppComponent implements OnInit {
   apiVersion = signal('');
   notice = signal('');
   errorMessage = signal('');
+  activeTooltip = signal('');
 
   runtimeOptions = signal<RuntimeOptions | null>(null);
   conversations = signal<Conversation[]>([]);
@@ -105,8 +107,8 @@ export class AppComponent implements OnInit {
   strategy: RagStrategy = 'auto';
   topK = 5;
   includeCaseDraft = true;
-  chatGenerationProvider: GenerationProvider = 'deterministic';
-  chatModelName = 'deterministic';
+  chatGenerationProvider: GenerationProvider = 'openai';
+  chatModelName = 'gpt-5.4-mini';
   chatPromptVersion = 'v1';
   chatLoading = signal(false);
   showJumpToLatest = signal(false);
@@ -115,12 +117,12 @@ export class AppComponent implements OnInit {
   selectedSuite = 'full';
   evalStrategy: RagStrategy = 'auto';
   evalTopK = 5;
-  evalGenerationProvider: GenerationProvider = 'deterministic';
+  evalGenerationProvider: GenerationProvider = 'openai';
   includeExternalJudges = false;
   promptVersion = 'v1';
-  modelName = 'deterministic';
-  judgeProvider: GenerationProvider = 'deterministic';
-  judgeModelName = 'deterministic';
+  modelName = 'gpt-5.4-mini';
+  judgeProvider: GenerationProvider = 'openai';
+  judgeModelName = 'gpt-5.4-mini';
   evalLoading = signal(false);
   evalProgress = signal(0);
   evalFamily = signal('');
@@ -190,11 +192,66 @@ export class AppComponent implements OnInit {
 
   @HostListener('document:keydown.escape')
   onEscape(): void {
+    if (this.activeTooltip()) {
+      this.activeTooltip.set('');
+      return;
+    }
     if (this.selectedTrace()) {
       this.closeTrace();
       return;
     }
     if (this.sidebarOpen()) this.sidebarOpen.set(false);
+  }
+
+  toggleTooltip(id: string): void {
+    this.activeTooltip.update((current) => current === id ? '' : id);
+  }
+
+  tooltipOpen(id: string): boolean {
+    return this.activeTooltip() === id;
+  }
+
+  closeTooltip(): void {
+    this.activeTooltip.set('');
+  }
+
+  evalConfigHelp(field: string): string {
+    const help: Record<string, string> = {
+      suite: 'Define la familia de pruebas que se ejecutará. full cubre todo el catálogo; rag se concentra en retrieval y generación; agentic, safety y voice acotan la ejecución.',
+      strategy: 'Fija la estrategia RAG usada durante el run. Adaptive Routing permite que el router elija; las demás opciones fuerzan una estrategia específica para aislar su comportamiento.',
+      sutProvider: 'SUT significa System Under Test. Es el motor que genera la respuesta que se está evaluando. Determinista no llama un LLM externo; OpenAI usa Responses API.',
+      sutModel: 'Modelo que actúa como SUT. Los modelos Mini se listan primero y son adecuados para iteración/costo; los modelos normales permiten comparar capacidad superior.',
+      prompt: 'Versión del prompt productivo aplicada al SUT. Mantenerla fija permite comparar modelos o RAG sin introducir otra variable.',
+      topK: 'Cantidad máxima de fragmentos que se entregan al pipeline de retrieval/generación. Cambiar Top K puede modificar recall, precisión, latencia y costo.',
+      externalJudge: 'Activa evaluación semántica con un LLM-as-a-Judge. Si está desactivado, se usan únicamente métricas deterministas y reglas compatibles con la suite.',
+      judgeProvider: 'Motor utilizado exclusivamente para juzgar respuestas. Conviene mantenerlo fijo durante una comparación para no sesgar el benchmark.',
+      judgeModel: 'Modelo que evalúa al SUT. Un Mini reduce costo; para validación final suele preferirse un modelo normal de mayor capacidad que el SUT.',
+      runtime: 'Resume exactamente qué motor/modelo genera la respuesta y qué motor/modelo la juzga. También confirma si el backend recibió OPENAI_API_KEY.'
+    };
+    return help[field] || '';
+  }
+
+  tabDescription(tab: EvalTab): string {
+    return tab.description;
+  }
+
+  dimensionDescription(dimension: string): string {
+    const tab = this.evalTabs.find((item) => item.dimensions.includes(dimension));
+    if (tab) return tab.description;
+    if (dimension === 'classic') return 'Métricas clásicas de referencia como Accuracy, Precision, Recall, F1, benchmarking y Self-Consistency.';
+    if (dimension === 'integration') return 'Estado de integración de frameworks externos o adaptadores de evaluación.';
+    return `Agrupa las métricas de ${this.humanize(dimension)} ejecutadas en este run.`;
+  }
+
+  benchmarkMetricCatalog(): string[] {
+    return [
+      'hit@1', 'precision@1', 'recall@1', 'ndcg@1',
+      'hit@3', 'precision@3', 'recall@3', 'ndcg@3',
+      'hit@5', 'precision@5', 'recall@5', 'ndcg@5', 'mrr', 'rerank_ndcg_delta',
+      'context_precision', 'context_recall', 'context_relevancy',
+      'faithfulness', 'groundedness', 'answer_relevancy', 'correctness', 'hallucination',
+      'semantic_similarity', 'truthfulness', 'coherence', 'avg_latency_ms', 'avg_tokens'
+    ];
   }
 
   async checkHealth(): Promise<void> {
@@ -231,6 +288,35 @@ export class AppComponent implements OnInit {
     return this.runtimeOptions()?.models?.[provider] || (provider === 'deterministic' ? ['deterministic'] : []);
   }
 
+  judgeModelOptions(provider: GenerationProvider): string[] {
+    return this.runtimeOptions()?.judge_models?.[provider] || this.modelOptions(provider);
+  }
+
+  modelTierLabel(model: string): string {
+    if (model.includes('mini')) return 'Mini';
+    if (model.includes('luna')) return 'Normal · eficiente';
+    if (model.includes('terra')) return 'Normal · balanceado';
+    if (model.includes('astra')) return 'Normal · máxima capacidad';
+    if (model.includes('sol')) return 'Normal · alta capacidad';
+    return 'Normal';
+  }
+
+  miniModelOptions(provider: GenerationProvider, judge = false): string[] {
+    const values = judge ? this.judgeModelOptions(provider) : this.modelOptions(provider);
+    return values.filter((model) => model !== 'deterministic' && model.includes('mini'));
+  }
+
+  normalModelOptions(provider: GenerationProvider, judge = false): string[] {
+    const values = judge ? this.judgeModelOptions(provider) : this.modelOptions(provider);
+    return values.filter((model) => model !== 'deterministic' && !model.includes('mini'));
+  }
+
+  modelDisplayLabel(model: string): string {
+    if (model === 'deterministic') return 'No aplica · motor determinista';
+    const preferred = model === 'gpt-5.4-mini' ? ' · predeterminado' : '';
+    return `${model} · ${this.modelTierLabel(model)}${preferred}`;
+  }
+
   promptVersions(): string[] {
     return this.runtimeOptions()?.prompt_versions || ['v1'];
   }
@@ -244,7 +330,7 @@ export class AppComponent implements OnInit {
   }
 
   onJudgeProviderChange(): void {
-    this.judgeModelName = this.defaultModel(this.judgeProvider);
+    this.judgeModelName = this.defaultJudgeModel(this.judgeProvider);
   }
 
   providerLabel(provider: string | null | undefined): string {
@@ -586,8 +672,77 @@ export class AppComponent implements OnInit {
   }
 
   benchmarkRows(): Array<Record<string, string | number | null>> {
-    const wanted = new Set(['mrr', 'ndcg@5', 'precision@5', 'recall@5', 'context_precision', 'context_recall', 'context_relevancy', 'faithfulness', 'groundedness', 'answer_relevancy', 'correctness', 'hallucination']);
-    return (this.benchmarkComparison()?.comparison || []).filter((row) => wanted.has(String(row['metric'])));
+    const comparison = this.benchmarkComparison();
+    if (!comparison) return [];
+    const wanted = this.benchmarkMetricCatalog().filter((metric) => !metric.startsWith('avg_'));
+    const byMetric = new Map(comparison.comparison.map((row) => [String(row['metric']), row]));
+    const rows = wanted.map((metric) => byMetric.get(metric)).filter((row): row is Record<string, string | number | null> => Boolean(row));
+    const latencyRow: Record<string, string | number | null> = { metric: 'avg_latency_ms' };
+    const tokensRow: Record<string, string | number | null> = { metric: 'avg_tokens' };
+    for (const run of this.benchmarkRuns()) {
+      latencyRow[run.run_id] = this.benchmarkLatency(run);
+      const tokens = run.metrics.map((item) => item.tokens).filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+      tokensRow[run.run_id] = tokens.length ? tokens.reduce((sum, value) => sum + value, 0) / tokens.length : null;
+    }
+    return [...rows, latencyRow, tokensRow];
+  }
+
+  metricDescription(metric: string): string {
+    const descriptions: Record<string, string> = {
+      mrr: 'Mean Reciprocal Rank. Mide qué tan arriba aparece el primer documento relevante. Cuanto mayor sea el valor, antes se encuentra evidencia útil.',
+      rerank_ndcg_delta: 'Mide la mejora del ranking después del reranking frente al orden crudo. Un valor superior a 0.5 indica mejora; 0.5 significa sin cambio.',
+      context_precision: 'Evalúa si los fragmentos relevantes aparecen antes que los irrelevantes dentro del contexto recuperado. Mide precisión y orden de la evidencia suministrada al LLM.',
+      context_recall: 'Evalúa si el contexto recuperado contiene toda la información necesaria para responder correctamente según el Golden Dataset.',
+      context_relevancy: 'Evalúa cuánto del contexto recuperado es estrictamente útil para la pregunta. Penaliza contexto redundante o no relacionado.',
+      faithfulness: 'Evalúa si las afirmaciones de la respuesta están sustentadas por el contexto recuperado, evitando información inventada o no respaldada.',
+      groundedness: 'Evalúa cuánto de la respuesta final permanece anclado en la evidencia recuperada y no en conocimiento externo no verificado.',
+      answer_relevancy: 'Evalúa si la respuesta atiende directamente la intención de la pregunta, penalizando desviaciones y contenido innecesario.',
+      correctness: 'Evalúa la exactitud factual comparando los hechos obligatorios de la respuesta contra el Golden Dataset.',
+      hallucination: 'Evalúa la ausencia de afirmaciones sin sustento. En esta PoC un score alto significa mejor comportamiento y menor alucinación.',
+      semantic_similarity: 'Compara semánticamente la respuesta generada con la respuesta esperada del Golden Dataset. Un valor alto indica mayor cercanía de significado.',
+      truthfulness: 'Mide veracidad como complemento de alucinación. Un valor alto indica menor proporción de afirmaciones no sustentadas.',
+      coherence: 'Evalúa consistencia interna y continuidad lógica entre las partes de la respuesta. Un valor alto indica una respuesta más coherente.',
+      avg_latency_ms: 'Promedio de latencia total observado en los casos RAG del benchmark. En esta fila un valor menor es mejor.',
+      avg_tokens: 'Promedio de tokens reportados por los casos que incluyen uso del modelo. Sirve para comparar consumo; un valor menor suele implicar menor costo.'
+    };
+    if (descriptions[metric]) return descriptions[metric];
+    const atK = metric.match(/^(hit|precision|recall|ndcg)@(\d+)$/);
+    if (atK) {
+      const [, kind, k] = atK;
+      if (kind === 'hit') return `Hit@${k}. Indica si al menos una fuente relevante aparece dentro de los primeros ${k} resultados recuperados.`;
+      if (kind === 'precision') return `Precision@${k}. Proporción de los primeros ${k} resultados que son relevantes. Un valor alto significa menos ruido.`;
+      if (kind === 'recall') return `Recall@${k}. Proporción de toda la evidencia relevante encontrada dentro de los primeros ${k} resultados. Un valor alto significa mayor cobertura.`;
+      return `nDCG@${k}. Evalúa la calidad del ordenamiento de los primeros ${k} resultados, premiando que la evidencia relevante aparezca antes.`;
+    }
+    return `Evalúa la métrica ${this.humanize(metric)} dentro del benchmark.`;
+  }
+
+  benchmarkMetricWinner(row: Record<string, string | number | null>): string {
+    const metric = String(row['metric']);
+    const values = (this.benchmarkComparison()?.runs || [])
+      .map((runId) => ({ runId, value: typeof row[runId] === 'number' ? Number(row[runId]) : null }))
+      .filter((item): item is { runId: string; value: number } => item.value !== null && Number.isFinite(item.value));
+    if (!values.length) return '—';
+    const lowerIsBetter = metric === 'avg_latency_ms' || metric === 'avg_tokens';
+    const best = lowerIsBetter ? Math.min(...values.map((item) => item.value)) : Math.max(...values.map((item) => item.value));
+    return values.filter((item) => Math.abs(item.value - best) < 1e-9).map((item) => this.humanize(this.benchmarkRunLabel(item.runId))).join(' / ');
+  }
+
+  benchmarkIsWinner(row: Record<string, string | number | null>, runId: string): boolean {
+    const metric = String(row['metric']);
+    const current = row[runId];
+    if (typeof current !== 'number') return false;
+    const values = (this.benchmarkComparison()?.runs || []).map((id) => row[id]).filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+    if (!values.length) return false;
+    const best = metric === 'avg_latency_ms' || metric === 'avg_tokens' ? Math.min(...values) : Math.max(...values);
+    return Math.abs(current - best) < 1e-9;
+  }
+
+  benchmarkValueText(metric: string, value: string | number | null): string {
+    if (value === null || value === undefined || typeof value !== 'number') return '—';
+    if (metric === 'avg_latency_ms') return `${Math.round(value)} ms`;
+    if (metric === 'avg_tokens') return `${Math.round(value)} tok`;
+    return this.scoreText(value);
   }
 
   benchmarkRunLabel(runId: string): string {
@@ -776,10 +931,14 @@ export class AppComponent implements OnInit {
     return this.modelOptions(provider)[0] || (provider === 'deterministic' ? 'deterministic' : '');
   }
 
+  private defaultJudgeModel(provider: GenerationProvider): string {
+    return this.judgeModelOptions(provider)[0] || (provider === 'deterministic' ? 'deterministic' : '');
+  }
+
   private normalizeModels(): void {
     if (!this.modelOptions(this.chatGenerationProvider).includes(this.chatModelName)) this.chatModelName = this.defaultModel(this.chatGenerationProvider);
     if (!this.modelOptions(this.evalGenerationProvider).includes(this.modelName)) this.modelName = this.defaultModel(this.evalGenerationProvider);
-    if (!this.modelOptions(this.judgeProvider).includes(this.judgeModelName)) this.judgeModelName = this.defaultModel(this.judgeProvider);
+    if (!this.judgeModelOptions(this.judgeProvider).includes(this.judgeModelName)) this.judgeModelName = this.defaultJudgeModel(this.judgeProvider);
   }
 
   private bestBenchmarkRun(selector: (run: EvalRunSummary) => number, lowerIsBetter: boolean): string {

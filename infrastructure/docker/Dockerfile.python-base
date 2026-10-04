@@ -10,4 +10,4 @@ COPY requirements/runtime.txt /tmp/runtime.txt
 RUN python -m pip install --upgrade pip && python -m pip install -r /tmp/runtime.txt
 
 LABEL org.opencontainers.image.title="Axiz Payments Evals Python Base" \
-      org.opencontainers.image.version="1.1.0"
+      org.opencontainers.image.version="local"

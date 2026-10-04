@@ -21,6 +21,7 @@ export interface HealthResponse {
 export interface RuntimeOptions {
   generation_providers: GenerationProvider[];
   models: Record<GenerationProvider, string[]>;
+  judge_models: Record<GenerationProvider, string[]>;
   prompt_versions: string[];
   defaults: {
     generation_provider: GenerationProvider;
